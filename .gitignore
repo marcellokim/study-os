@@ -1,0 +1,5 @@
+.omx/
+.worktrees/
+worktrees/
+__pycache__/
+*.pyc

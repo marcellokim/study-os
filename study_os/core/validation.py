@@ -77,7 +77,8 @@ def validate_init_course_request(payload: dict) -> InitCourseRequest:
             },
             "block",
         )
-        blocks.append(Block(**raw))
+        block_id = _require_string(raw["block_id"], "block_id")
+        blocks.append(Block(**{**raw, "block_id": block_id}))
 
     block_ids = {block.block_id for block in blocks}
     items: list[Item] = []
@@ -95,21 +96,31 @@ def validate_init_course_request(payload: dict) -> InitCourseRequest:
             },
             "item",
         )
-        if raw["block_id"] not in block_ids:
-            raise ValidationError(f"item {raw['item_id']} references unknown block {raw['block_id']}")
-        items.append(Item(**raw))
+        item_id = _require_string(raw["item_id"], "item_id")
+        block_id = _require_string(raw["block_id"], "block_id")
+        if block_id not in block_ids:
+            raise ValidationError(f"item {item_id} references unknown block {block_id}")
+        items.append(Item(**{**raw, "item_id": item_id, "block_id": block_id}))
 
     item_ids = {item.item_id for item in items}
-    source_manifest = [SourceLink(**raw) for raw in payload.get("source_manifest", [])]
+    source_manifest: list[SourceLink] = []
+    for raw in payload.get("source_manifest", []):
+        _require_keys(raw, {"block_id", "source_type", "path"}, "source manifest row")
+        block_id = _require_string(raw["block_id"], "block_id")
+        if block_id not in block_ids:
+            raise ValidationError(f"unknown source block_id: {block_id}")
+        source_manifest.append(SourceLink(**{**raw, "block_id": block_id}))
 
     visual_requirements: list[VisualRequirement] = []
     for raw in payload.get("visual_requirements", []):
         _require_keys(raw, {"item_id", "block_id", "description", "required_image"}, "visual requirement")
-        if raw["item_id"] not in item_ids:
-            raise ValidationError(f"unknown visual item_id: {raw['item_id']}")
-        if raw["block_id"] not in block_ids:
-            raise ValidationError(f"unknown visual block_id: {raw['block_id']}")
-        visual_requirements.append(VisualRequirement(**raw))
+        item_id = _require_string(raw["item_id"], "item_id")
+        block_id = _require_string(raw["block_id"], "block_id")
+        if item_id not in item_ids:
+            raise ValidationError(f"unknown visual item_id: {item_id}")
+        if block_id not in block_ids:
+            raise ValidationError(f"unknown visual block_id: {block_id}")
+        visual_requirements.append(VisualRequirement(**{**raw, "item_id": item_id, "block_id": block_id}))
 
     return InitCourseRequest(
         course=course,
@@ -128,8 +139,9 @@ def validate_close_session_request(payload: dict, known_item_ids: set[str]) -> C
     reviewed_items: list[ReviewedItemUpdate] = []
     for raw in payload["reviewed_items"]:
         _require_keys(raw, {"item_id", "phase", "result"}, "reviewed item")
-        if raw["item_id"] not in known_item_ids:
-            raise ValidationError(f"unknown item_id: {raw['item_id']}")
+        item_id = _require_string(raw["item_id"], "item_id")
+        if item_id not in known_item_ids:
+            raise ValidationError(f"unknown item_id: {item_id}")
         phase = _require_string(raw["phase"], "phase")
         if phase not in {"learning", "review"}:
             raise ValidationError(f"unsupported phase: {phase}")
@@ -149,7 +161,7 @@ def validate_close_session_request(payload: dict, known_item_ids: set[str]) -> C
             if error_code not in _ERROR_CODE_VALUES:
                 raise ValidationError(f"unsupported error_code: {error_code}")
 
-        reviewed_items.append(ReviewedItemUpdate(**raw))
+        reviewed_items.append(ReviewedItemUpdate(**{**raw, "item_id": item_id}))
 
     day_index = payload.get("day_index")
     if day_index is not None and (

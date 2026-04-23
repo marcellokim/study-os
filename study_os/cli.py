@@ -35,7 +35,10 @@ def build_parser() -> argparse.ArgumentParser:
     start_day_parser.add_argument("--day", required=True, type=int)
     start_day_parser.add_argument("--today", required=True)
 
-    for name in ("close-session", "start-final-recall", "status"):
+    close_session_parser = subparsers.add_parser("close-session", help=COMMAND_HELP["close-session"])
+    close_session_parser.add_argument("--request-file", required=True)
+
+    for name in ("start-final-recall", "status"):
         subparsers.add_parser(name, help=COMMAND_HELP[name])
 
     return parser
@@ -65,6 +68,13 @@ def main(argv: list[str] | None = None) -> int:
 
     if parsed.command == "start-day":
         receipt = engine.start_day(parsed.course, day_index=parsed.day, today=parsed.today)
+        print(receipt.status)
+        for path in receipt.generated_files:
+            print(path)
+        return 0
+
+    if parsed.command == "close-session":
+        receipt = engine.close_session(_load_request_file(parsed.request_file))
         print(receipt.status)
         for path in receipt.generated_files:
             print(path)

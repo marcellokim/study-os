@@ -8,10 +8,13 @@ from typing import Any
 from study_os.core.models import Block, CourseConfig, ExecutionReceipt, Item, MasteryRecord, QueueEntry, VisualRequirement
 from study_os.core.packets import build_learning_packet, build_master_plan, build_recall_packet
 from study_os.core.paths import build_course_paths
+from study_os.core.scheduler import build_queue_entry
 from study_os.core.storage import CourseStore
-from study_os.core.validation import validate_init_course_request
+from study_os.core.transitions import apply_review_update
+from study_os.core.validation import validate_close_session_request, validate_init_course_request
 
 _IMPORTANCE_ORDER = {"high": 0, "medium": 1, "low": 2}
+_PRIORITY_ORDER = {"urgent": 0, "high": 1, "medium": 2, "low": 3}
 
 
 class StudyEngine:
@@ -125,6 +128,115 @@ class StudyEngine:
             held_items=[],
             generated_files=[str(paths.course_file), str(learning_file), str(recall_file)],
             warnings=[],
+        )
+
+    def close_session(self, payload: dict[str, Any]) -> ExecutionReceipt:
+        course_slug = str(payload["course_slug"])
+        paths = build_course_paths(self.workspace_root, course_slug)
+        paths.ensure_directories()
+        store = CourseStore(paths)
+
+        items = [Item(**row) for row in store.load_items()]
+        blocks = [Block(**row) for row in store.load_blocks()]
+        visuals = [VisualRequirement(**row) for row in store.load_visual_requirements()]
+        request = validate_close_session_request(payload, {item.item_id for item in items})
+
+        course = CourseConfig(**store.load_course())
+        mastery = store.load_mastery()
+        item_by_id = {item.item_id: item for item in items}
+        block_by_id = {block.block_id: block for block in blocks}
+
+        recent_error_codes: dict[str, list[str]] = {}
+        for error in store.load_errors():
+            item_id = error.get("item_id")
+            error_code = error.get("error_code")
+            if isinstance(item_id, str) and isinstance(error_code, str):
+                recent_error_codes.setdefault(item_id, []).append(error_code)
+
+        applied_items: list[str] = []
+        warnings: list[str] = []
+        for reviewed in request.reviewed_items:
+            item = item_by_id[reviewed.item_id]
+            current = MasteryRecord(
+                **mastery.get(
+                    reviewed.item_id,
+                    asdict(MasteryRecord(item_id=item.item_id, block_id=item.block_id)),
+                )
+            )
+            updated = apply_review_update(current, reviewed, request.session_date)
+            mastery[reviewed.item_id] = asdict(updated)
+            applied_items.append(reviewed.item_id)
+
+            if reviewed.result == "wrong" or reviewed.error_code is not None:
+                error_code = reviewed.error_code or "C1"
+                store.append_error(
+                    {
+                        "date": request.session_date,
+                        "block_id": updated.block_id,
+                        "item_id": reviewed.item_id,
+                        "error_code": error_code,
+                        "confidence": reviewed.confidence,
+                        "note": reviewed.note,
+                    }
+                )
+                recent_error_codes.setdefault(reviewed.item_id, []).append(error_code)
+
+        current_day = request.day_index if request.day_index is not None else course.current_day
+        rebuilt_queue: list[dict[str, Any]] = []
+        for item_id in sorted(mastery):
+            record = MasteryRecord(**mastery[item_id])
+            item = item_by_id[item_id]
+            block = block_by_id[item.block_id]
+            unresolved_visual = any(
+                visual.item_id == item_id and visual.status != "available"
+                for visual in visuals
+            )
+            queue_entry = build_queue_entry(
+                record,
+                item,
+                block,
+                course.exam_date,
+                request.session_date,
+                current_day=current_day,
+                recent_error_codes=recent_error_codes.get(item_id, [])[-3:],
+                unresolved_visual=unresolved_visual,
+            )
+            if queue_entry is not None:
+                rebuilt_queue.append(asdict(queue_entry))
+
+        rebuilt_queue.sort(
+            key=lambda row: (
+                _PRIORITY_ORDER.get(row["priority"], len(_PRIORITY_ORDER)),
+                row["next_review_date"] or "",
+                row["item_id"],
+            )
+        )
+
+        store.save_mastery(mastery)
+        store.save_review_queue(rebuilt_queue)
+        store.append_session_history(
+            {
+                "course_slug": request.course_slug,
+                "session_date": request.session_date,
+                "day_index": request.day_index,
+                "status": "applied",
+                "applied_items": applied_items,
+                "held_items": [],
+                "warnings": warnings,
+            }
+        )
+
+        return ExecutionReceipt(
+            status="applied",
+            applied_items=applied_items,
+            held_items=[],
+            generated_files=[
+                str(paths.mastery_file),
+                str(paths.review_queue_file),
+                str(paths.error_log_file),
+                str(paths.session_history_file),
+            ],
+            warnings=warnings,
         )
 
     def _refresh_workspace_md(self) -> None:

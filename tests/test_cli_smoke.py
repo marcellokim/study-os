@@ -103,6 +103,61 @@ class CliSmokeTest(unittest.TestCase):
             self.assertTrue((workspace / "courses" / "operating-systems-midterm" / "outputs" / "master_plan.md").exists())
             self.assertIn("operating-systems-midterm", (workspace / "workspace.md").read_text(encoding="utf-8"))
 
+    def test_init_course_with_missing_request_file_fails_cleanly_without_traceback(self) -> None:
+        with TemporaryDirectory() as tmp:
+            workspace = Path(tmp) / 'workspace'
+            missing_request = Path(tmp) / 'missing.json'
+
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    '-m',
+                    'study_os',
+                    '--workspace',
+                    str(workspace),
+                    'init-course',
+                    '--request-file',
+                    str(missing_request),
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(completed.returncode, 2)
+            self.assertEqual(completed.stdout, '')
+            self.assertIn('error: request file not found:', completed.stderr)
+            self.assertIn(str(missing_request), completed.stderr)
+            self.assertNotIn('Traceback', completed.stderr)
+
+    def test_init_course_with_malformed_request_file_fails_cleanly_without_traceback(self) -> None:
+        with TemporaryDirectory() as tmp:
+            workspace = Path(tmp) / 'workspace'
+            request_file = Path(tmp) / 'request.json'
+            request_file.write_text('{"course": ', encoding='utf-8')
+
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    '-m',
+                    'study_os',
+                    '--workspace',
+                    str(workspace),
+                    'init-course',
+                    '--request-file',
+                    str(request_file),
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(completed.returncode, 2)
+            self.assertEqual(completed.stdout, '')
+            self.assertIn('error: request file is not valid JSON:', completed.stderr)
+            self.assertIn(str(request_file), completed.stderr)
+            self.assertNotIn('Traceback', completed.stderr)
+
     def test_start_day_command_writes_daily_packets_and_reports_success(self) -> None:
         request = {
             "course": {

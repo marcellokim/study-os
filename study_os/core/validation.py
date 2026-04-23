@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
+import re
 
 from study_os.core.constants import Confidence, ErrorCode, Result
 from study_os.core.models import (
@@ -22,6 +23,7 @@ class ValidationError(ValueError):
 _RESULT_VALUES = {result.value for result in Result}
 _CONFIDENCE_VALUES = {level.value for level in Confidence}
 _ERROR_CODE_VALUES = {code.value for code in ErrorCode}
+_SLUG_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 
 
 def _require_keys(payload: object, keys: set[str], label: str) -> None:
@@ -77,8 +79,8 @@ def validate_positive_day_index(value: object, label: str = "day_index") -> int:
 
 def _validate_slug(value: object, label: str) -> None:
     text = _require_string(value, label)
-    if not text or any(ch.isspace() for ch in text):
-        raise ValidationError(f"{label} must be a non-empty slug without spaces")
+    if not _SLUG_PATTERN.fullmatch(text):
+        raise ValidationError(f"{label} must be a lowercase slug using only letters, digits, _ or -")
 
 
 def validate_init_course_request(payload: dict) -> InitCourseRequest:

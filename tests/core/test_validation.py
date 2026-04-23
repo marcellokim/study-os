@@ -62,6 +62,15 @@ class ValidationTest(unittest.TestCase):
         with self.assertRaises(ValidationError):
             validate_init_course_request(payload)
 
+    def test_init_request_rejects_path_traversal_course_slug(self) -> None:
+        for invalid_slug in ('../escape', 'nested/path', 'nested\\path', '.hidden-course'):
+            payload = self._valid_init_payload()
+            payload['course']['course_slug'] = invalid_slug
+
+            with self.subTest(course_slug=invalid_slug):
+                with self.assertRaisesRegex(ValidationError, 'course_slug must be a lowercase slug using only letters, digits, _ or -'):
+                    validate_init_course_request(payload)
+
     def test_init_request_rejects_bad_exam_date(self) -> None:
         payload = self._valid_init_payload()
         payload["course"]["exam_date"] = "2026/05/20"
@@ -243,6 +252,13 @@ class ValidationTest(unittest.TestCase):
 
         with self.assertRaises(ValidationError):
             validate_close_session_request(payload, {"include_vs_extend"})
+
+    def test_close_session_rejects_path_traversal_course_slug(self) -> None:
+        payload = self._valid_close_payload()
+        payload['course_slug'] = '../escape'
+
+        with self.assertRaisesRegex(ValidationError, 'course_slug must be a lowercase slug using only letters, digits, _ or -'):
+            validate_close_session_request(payload, {'include_vs_extend'})
 
     def test_close_session_rejects_scalar_reviewed_items(self) -> None:
         payload = self._valid_close_payload()

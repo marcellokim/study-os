@@ -49,7 +49,14 @@ class CoursePaths:
 
 
 def build_course_paths(workspace_root: Path, course_slug: str) -> CoursePaths:
-    course_root = workspace_root / "courses" / course_slug
+    courses_root = workspace_root / "courses"
+    course_root = courses_root / course_slug
+    resolved_courses_root = courses_root.resolve()
+    resolved_course_root = course_root.resolve()
+    try:
+        resolved_course_root.relative_to(resolved_courses_root)
+    except ValueError as exc:
+        raise ValueError("course_slug must stay within the courses directory") from exc
     sources_dir = course_root / "sources"
     return CoursePaths(
         workspace_root=workspace_root,

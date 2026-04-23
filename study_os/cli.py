@@ -20,7 +20,18 @@ COMMAND_HELP = {
 
 
 def _load_request_file(path: str) -> dict[str, Any]:
-    return json.loads(Path(path).read_text(encoding="utf-8"))
+    request_path = Path(path)
+    try:
+        raw_text = request_path.read_text(encoding="utf-8")
+    except FileNotFoundError as exc:
+        raise ValidationError(f"request file not found: {request_path}") from exc
+    except OSError as exc:
+        raise ValidationError(f"request file could not be read: {request_path}") from exc
+
+    try:
+        return json.loads(raw_text)
+    except json.JSONDecodeError as exc:
+        raise ValidationError(f"request file is not valid JSON: {request_path}") from exc
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -95,7 +106,7 @@ def main(argv: list[str] | None = None) -> int:
         if parsed.command == "status":
             print(engine.status(parsed.course))
             return 0
-    except ValidationError as exc:
+    except (ValidationError, ValueError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
 

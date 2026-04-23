@@ -5,6 +5,31 @@ from collections import Counter
 from study_os.core.models import Block, CourseConfig, Item, QueueEntry, VisualRequirement
 
 
+def _block_sort_key(block: Block) -> tuple[str, str]:
+    return (block.block_name, block.block_id)
+
+
+def _item_sort_key(item: Item) -> tuple[str, str]:
+    return (item.item_id, item.prompt)
+
+
+def _visual_sort_key(visual: VisualRequirement) -> tuple[str, str, str, str]:
+    return (visual.block_id, visual.item_id, visual.required_image, visual.description)
+
+
+def _queue_entry_sort_key(entry: QueueEntry) -> tuple[bool, int, str, str, str, str, str, str]:
+    return (
+        entry.next_review_day is None,
+        entry.next_review_day if entry.next_review_day is not None else 10**9,
+        entry.next_review_date or "",
+        entry.block_id,
+        entry.item_id,
+        entry.status,
+        entry.priority,
+        entry.reason,
+    )
+
+
 def build_master_plan(course: CourseConfig, blocks: list[Block], items: list[Item]) -> str:
     item_counts = Counter(item.block_id for item in items)
     lines = [
@@ -40,17 +65,45 @@ def build_learning_packet(
     items_by_block: dict[str, list[Item]],
     visuals: list[VisualRequirement],
 ) -> str:
-    first_block = blocks[0]
-    first_item = items_by_block[first_block.block_id][0]
+    sorted_blocks = sorted(blocks, key=_block_sort_key)
+    sorted_visuals = sorted(visuals, key=_visual_sort_key)
+    sorted_items_by_block = {
+        block.block_id: sorted(items_by_block.get(block.block_id, []), key=_item_sort_key) for block in sorted_blocks
+    }
+
     lines = [
         f"# Day {day_index:02d} Learning Packet — {course.course_name}",
         "",
         "## First action",
-        f"- Start with `{first_item.item_id}` and answer: {first_item.prompt}",
-        "",
-        "## New blocks",
     ]
-    for block in blocks:
+    if not sorted_blocks:
+        lines.extend(
+            [
+                "- No new blocks scheduled today.",
+                "",
+                "## New blocks",
+                "- None",
+                "",
+                "## Required visuals",
+                "- None",
+                "",
+                "## Done means",
+                "- Confirm there are no scheduled new blocks before ending the session.",
+            ]
+        )
+        return "\n".join(lines) + "\n"
+
+    first_item = next(
+        (items[0] for block_id, items in sorted_items_by_block.items() if items),
+        None,
+    )
+    if first_item is None:
+        lines.append("- No item prompts scheduled for today.")
+    else:
+        lines.append(f"- Start with `{first_item.item_id}` and answer: {first_item.prompt}")
+    lines.extend(["", "## New blocks"])
+
+    for block in sorted_blocks:
         lines.extend(
             [
                 f"### {block.block_name}",
@@ -59,12 +112,12 @@ def build_learning_packet(
                 "- Required learning behavior: explain, contrast, or reconstruct without notes before checking the source.",
             ]
         )
-        for item in items_by_block[block.block_id]:
+        for item in sorted_items_by_block[block.block_id]:
             lines.append(f"- `{item.item_id}` — {item.prompt}")
         lines.append("")
     lines.append("## Required visuals")
-    if visuals:
-        for visual in visuals:
+    if sorted_visuals:
+        for visual in sorted_visuals:
             lines.append(f"- `{visual.required_image}` for `{visual.item_id}`: {visual.description}")
     else:
         lines.append("- None")
@@ -79,14 +132,16 @@ def build_recall_packet(
     items_by_id: dict[str, Item],
     visuals: list[VisualRequirement],
 ) -> str:
+    sorted_queue_entries = sorted(queue_entries, key=_queue_entry_sort_key)
+    sorted_visuals = sorted(visuals, key=_visual_sort_key)
     lines = [
         f"# Day {day_index:02d} Recall Packet — {course.course_name}",
         "",
         "## Immediate recall",
     ]
-    if not queue_entries:
+    if not sorted_queue_entries:
         lines.append("- No due review items yet. Run same-day recall after finishing new learning.")
-    for entry in queue_entries:
+    for entry in sorted_queue_entries:
         item = items_by_id[entry.item_id]
         lines.extend(
             [
@@ -95,8 +150,8 @@ def build_recall_packet(
             ]
         )
     lines.extend(["", "## Visual gate checks"])
-    if visuals:
-        for visual in visuals:
+    if sorted_visuals:
+        for visual in sorted_visuals:
             lines.append(f"- `{visual.item_id}` requires `{visual.required_image}` before promotion.")
     else:
         lines.append("- None")
@@ -110,6 +165,8 @@ def build_final_recall_pack(
     blocks_by_id: dict[str, Block],
     visuals: list[VisualRequirement],
 ) -> str:
+    sorted_queue_entries = sorted(queue_entries, key=_queue_entry_sort_key)
+    sorted_visuals = sorted(visuals, key=_visual_sort_key)
     lines = [
         f"# Final Recall Pack — {course.course_name}",
         "",
@@ -118,7 +175,7 @@ def build_final_recall_pack(
         "",
         "## Highest-risk items",
     ]
-    for entry in queue_entries:
+    for entry in sorted_queue_entries:
         item = items_by_id[entry.item_id]
         block = blocks_by_id[entry.block_id]
         lines.append(f"- `{entry.item_id}` in {block.block_name}: {item.prompt} ({entry.reason})")
@@ -131,8 +188,8 @@ def build_final_recall_pack(
             "- Do not promote image-dependent items without the referenced image.",
         ]
     )
-    if visuals:
+    if sorted_visuals:
         lines.extend(["", "## Required visuals"])
-        for visual in visuals:
+        for visual in sorted_visuals:
             lines.append(f"- `{visual.required_image}` for `{visual.item_id}`")
     return "\n".join(lines) + "\n"

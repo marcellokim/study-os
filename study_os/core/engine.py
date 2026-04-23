@@ -271,7 +271,7 @@ class StudyEngine:
         ranked_visuals = [visual for visual in visuals if visual.item_id in relevant_item_ids]
 
         paths.final_recall_file.write_text(
-            build_final_recall_pack(course, ranked_queue, items, blocks, ranked_visuals),
+            build_final_recall_pack(course, ranked_queue, items, blocks, ranked_visuals, today=today),
             encoding="utf-8",
         )
 

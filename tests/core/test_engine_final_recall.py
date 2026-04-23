@@ -79,9 +79,11 @@ class FinalRecallWorkflowTest(unittest.TestCase):
 
             receipt = engine.start_final_recall("operating-systems-midterm", today="2026-04-23")
             summary = engine.status("operating-systems-midterm")
+            pack_text = paths.final_recall_file.read_text(encoding="utf-8")
 
             self.assertEqual(receipt.status, "applied")
             self.assertTrue(paths.final_recall_file.exists())
-            self.assertIn("Final Recall Pack", paths.final_recall_file.read_text(encoding="utf-8"))
+            self.assertIn("Final Recall Pack", pack_text)
+            self.assertIn("- Generated on: 2026-04-23", pack_text)
             self.assertIn("include_vs_extend", summary)
             self.assertIn("FINAL", summary)

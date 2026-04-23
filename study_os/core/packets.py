@@ -170,6 +170,7 @@ def build_final_recall_pack(
     items_by_id: dict[str, Item],
     blocks_by_id: dict[str, Block],
     visuals: list[VisualRequirement],
+    today: str | None = None,
 ) -> str:
     sorted_queue_entries = sorted(queue_entries, key=_queue_entry_sort_key)
     sorted_visuals = sorted(visuals, key=_visual_sort_key)
@@ -177,10 +178,16 @@ def build_final_recall_pack(
         f"# Final Recall Pack — {course.course_name}",
         "",
         f"- Exam date: {course.exam_date}",
-        "- Rule: no scope expansion, only recall stabilization.",
+    ]
+    if today is not None:
+        lines.append(f"- Generated on: {today}")
+    lines.extend(
+        [
+            "- Rule: no scope expansion, only recall stabilization.",
         "",
         "## Highest-risk items",
-    ]
+        ]
+    )
     for entry in sorted_queue_entries:
         item = items_by_id[entry.item_id]
         block = blocks_by_id[entry.block_id]

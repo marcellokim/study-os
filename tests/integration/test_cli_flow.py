@@ -79,8 +79,15 @@ class CliFlowIntegrationTest(unittest.TestCase):
                 [sys.executable, "-m", "study_os", "--workspace", str(workspace), "status", "--course", "operating-systems-midterm"],
             ]
 
+            outputs: list[str] = []
             for command in commands:
                 completed = subprocess.run(command, capture_output=True, text=True, check=False)
                 self.assertEqual(completed.returncode, 0, completed.stderr)
+                outputs.append(completed.stdout)
 
-            self.assertTrue(workspace.joinpath("courses/operating-systems-midterm/outputs/final_recall_pack.md").exists())
+            final_recall_file = workspace.joinpath("courses/operating-systems-midterm/outputs/final_recall_pack.md")
+            self.assertIn("applied", outputs[3])
+            self.assertIn(str(final_recall_file), outputs[3])
+            self.assertIn("Course: operating-systems-midterm", outputs[4])
+            self.assertIn("- include_vs_extend [R0]", outputs[4])
+            self.assertTrue(final_recall_file.exists())

@@ -9,32 +9,34 @@ from typing import Any
 JsonValue = dict[str, Any] | list[Any] | str | int | float | bool | None
 
 
-def read_yamlish(path: Path, default: JsonValue) -> JsonValue:
+def _read_json_file(path: Path, default: JsonValue) -> JsonValue:
     if not path.exists():
         return copy.deepcopy(default)
     text = path.read_text(encoding="utf-8").strip()
     if not text:
         return copy.deepcopy(default)
     return json.loads(text)
+
+
+def _write_json_file(path: Path, payload: JsonValue) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def read_yamlish(path: Path, default: JsonValue) -> JsonValue:
+    return _read_json_file(path, default)
 
 
 def write_yamlish(path: Path, payload: JsonValue) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    _write_json_file(path, payload)
 
 
 def read_json(path: Path, default: JsonValue) -> JsonValue:
-    if not path.exists():
-        return copy.deepcopy(default)
-    text = path.read_text(encoding="utf-8").strip()
-    if not text:
-        return copy.deepcopy(default)
-    return json.loads(text)
+    return _read_json_file(path, default)
 
 
 def write_json(path: Path, payload: JsonValue) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    _write_json_file(path, payload)
 
 
 def append_jsonl(path: Path, payload: dict[str, Any]) -> None:

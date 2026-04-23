@@ -3,6 +3,7 @@ from tempfile import TemporaryDirectory
 import unittest
 
 from study_os.core.json_yaml import append_jsonl, read_jsonl, read_yamlish, write_yamlish
+from study_os.core.models import CourseConfig
 from study_os.core.paths import build_course_paths
 from study_os.core.storage import CourseStore
 
@@ -32,3 +33,47 @@ class StorageTest(unittest.TestCase):
             store.save_review_queue([{"item_id": "include_vs_extend", "block_id": "use_case_diagram", "status": "R1", "priority": "high", "last_result": "wrong", "confidence": "high", "next_review_day": 2, "next_review_date": "2026-04-24", "reason": "comparison confusion"}])
             self.assertIn("include_vs_extend", store.load_mastery())
             self.assertEqual(store.load_review_queue()[0]["priority"], "high")
+
+    def test_course_store_saves_course_to_yaml_backed_path(self) -> None:
+        with TemporaryDirectory() as tmp:
+            paths = build_course_paths(Path(tmp), "operating-systems-midterm")
+            paths.ensure_directories()
+            store = CourseStore(paths)
+            course = CourseConfig(
+                course_slug="operating-systems-midterm",
+                course_name="Operating Systems Midterm",
+                exam_date="2026-05-20",
+                timezone="Asia/Seoul",
+            )
+
+            store.save_course(course)
+
+            self.assertEqual(
+                store.load_course(),
+                {
+                    "course_slug": "operating-systems-midterm",
+                    "course_name": "Operating Systems Midterm",
+                    "exam_date": "2026-05-20",
+                    "timezone": "Asia/Seoul",
+                    "current_day": 0,
+                },
+            )
+            self.assertTrue(paths.course_file.read_text(encoding="utf-8").lstrip().startswith("{"))
+
+    def test_course_store_appends_jsonl_logs(self) -> None:
+        with TemporaryDirectory() as tmp:
+            paths = build_course_paths(Path(tmp), "operating-systems-midterm")
+            paths.ensure_directories()
+            store = CourseStore(paths)
+
+            store.append_error({"item_id": "include_vs_extend", "error_code": "C2"})
+            store.append_session_history({"session_date": "2026-04-23", "reviewed_items": 3})
+
+            self.assertEqual(
+                store.load_errors(),
+                [{"item_id": "include_vs_extend", "error_code": "C2"}],
+            )
+            self.assertEqual(
+                store.load_session_history(),
+                [{"session_date": "2026-04-23", "reviewed_items": 3}],
+            )

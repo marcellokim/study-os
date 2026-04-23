@@ -1,7 +1,12 @@
 from __future__ import annotations
 
 import argparse
+import json
+from pathlib import Path
 import sys
+from typing import Any
+
+from study_os.core.engine import StudyEngine
 
 
 COMMAND_HELP = {
@@ -13,12 +18,20 @@ COMMAND_HELP = {
 }
 
 
+def _load_request_file(path: str) -> dict[str, Any]:
+    return json.loads(Path(path).read_text(encoding="utf-8"))
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="study_os")
+    parser.add_argument("--workspace", default=".")
     subparsers = parser.add_subparsers(dest="command")
 
-    for name, help_text in COMMAND_HELP.items():
-        subparsers.add_parser(name, help=help_text)
+    init_parser = subparsers.add_parser("init-course", help=COMMAND_HELP["init-course"])
+    init_parser.add_argument("--request-file", required=True)
+
+    for name in ("start-day", "close-session", "start-final-recall", "status"):
+        subparsers.add_parser(name, help=COMMAND_HELP[name])
 
     return parser
 
@@ -31,5 +44,14 @@ def main(argv: list[str] | None = None) -> int:
         parser.print_help()
         return 1
 
-    parser.parse_args(args)
+    parsed = parser.parse_args(args)
+
+    if parsed.command == "init-course":
+        engine = StudyEngine(Path(parsed.workspace))
+        receipt = engine.initialize_course(_load_request_file(parsed.request_file))
+        print(receipt.status)
+        for path in receipt.generated_files:
+            print(path)
+        return 0
+
     return 0

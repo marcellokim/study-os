@@ -7,53 +7,65 @@ from study_os.core.engine import StudyEngine
 from study_os.core.models import MasteryRecord
 from study_os.core.paths import build_course_paths
 from study_os.core.storage import CourseStore
+from study_os.core.validation import ValidationError
 
 
 class StartDayWorkflowTest(unittest.TestCase):
+    def _course_payload(
+        self,
+        *,
+        blocks: list[dict] | None = None,
+        items: list[dict] | None = None,
+        visual_requirements: list[dict] | None = None,
+    ) -> dict:
+        return {
+            "course": {
+                "course_slug": "operating-systems-midterm",
+                "course_name": "Operating Systems Midterm",
+                "exam_date": "2026-05-20",
+                "timezone": "Asia/Seoul",
+            },
+            "blocks": blocks
+            or [
+                {
+                    "block_id": "use_case_diagram",
+                    "block_name": "Use Case Diagram",
+                    "block_type": "compare-contrast",
+                    "importance": "high",
+                    "difficulty": "medium",
+                    "exam_relevance": "high",
+                    "needs_prereq": False,
+                    "needs_visuals": True,
+                }
+            ],
+            "items": items
+            or [
+                {
+                    "item_id": "include_vs_extend",
+                    "block_id": "use_case_diagram",
+                    "prompt": "Explain include vs extend.",
+                    "answer_mode": "short-answer",
+                    "difficulty": "medium",
+                    "exam_relevance": "high",
+                    "needs_visuals": True,
+                }
+            ],
+            "visual_requirements": visual_requirements
+            if visual_requirements is not None
+            else [
+                {
+                    "item_id": "include_vs_extend",
+                    "block_id": "use_case_diagram",
+                    "description": "Need the UML arrow direction diagram.",
+                    "required_image": "uml-use-case-arrow.png",
+                }
+            ],
+        }
+
     def test_start_day_writes_learning_and_recall_packets(self) -> None:
         with TemporaryDirectory() as tmp:
             engine = StudyEngine(Path(tmp))
-            engine.initialize_course(
-                {
-                    "course": {
-                        "course_slug": "operating-systems-midterm",
-                        "course_name": "Operating Systems Midterm",
-                        "exam_date": "2026-05-20",
-                        "timezone": "Asia/Seoul",
-                    },
-                    "blocks": [
-                        {
-                            "block_id": "use_case_diagram",
-                            "block_name": "Use Case Diagram",
-                            "block_type": "compare-contrast",
-                            "importance": "high",
-                            "difficulty": "medium",
-                            "exam_relevance": "high",
-                            "needs_prereq": False,
-                            "needs_visuals": True,
-                        }
-                    ],
-                    "items": [
-                        {
-                            "item_id": "include_vs_extend",
-                            "block_id": "use_case_diagram",
-                            "prompt": "Explain include vs extend.",
-                            "answer_mode": "short-answer",
-                            "difficulty": "medium",
-                            "exam_relevance": "high",
-                            "needs_visuals": True,
-                        }
-                    ],
-                    "visual_requirements": [
-                        {
-                            "item_id": "include_vs_extend",
-                            "block_id": "use_case_diagram",
-                            "description": "Need the UML arrow direction diagram.",
-                            "required_image": "uml-use-case-arrow.png",
-                        }
-                    ],
-                }
-            )
+            engine.initialize_course(self._course_payload())
 
             paths = build_course_paths(Path(tmp), "operating-systems-midterm")
             store = CourseStore(paths)
@@ -96,3 +108,89 @@ class StartDayWorkflowTest(unittest.TestCase):
             self.assertIn("2026-04-23", paths.daily_dir.joinpath("day_01_recall.md").read_text(encoding="utf-8"))
             self.assertIn("First action", paths.daily_dir.joinpath("day_01_learning.md").read_text(encoding="utf-8"))
             self.assertIn("Immediate recall", paths.daily_dir.joinpath("day_01_recall.md").read_text(encoding="utf-8"))
+
+    def test_start_day_advances_new_block_selection_across_days(self) -> None:
+        with TemporaryDirectory() as tmp:
+            engine = StudyEngine(Path(tmp))
+            engine.initialize_course(
+                self._course_payload(
+                    blocks=[
+                        {
+                            "block_id": "block_a",
+                            "block_name": "Alpha",
+                            "block_type": "concept",
+                            "importance": "high",
+                            "difficulty": "medium",
+                            "exam_relevance": "high",
+                            "needs_prereq": False,
+                            "needs_visuals": False,
+                        },
+                        {
+                            "block_id": "block_b",
+                            "block_name": "Beta",
+                            "block_type": "concept",
+                            "importance": "high",
+                            "difficulty": "medium",
+                            "exam_relevance": "high",
+                            "needs_prereq": False,
+                            "needs_visuals": False,
+                        },
+                        {
+                            "block_id": "block_c",
+                            "block_name": "Gamma",
+                            "block_type": "concept",
+                            "importance": "medium",
+                            "difficulty": "medium",
+                            "exam_relevance": "medium",
+                            "needs_prereq": False,
+                            "needs_visuals": False,
+                        },
+                    ],
+                    items=[
+                        {
+                            "item_id": "item_a",
+                            "block_id": "block_a",
+                            "prompt": "Explain alpha.",
+                            "answer_mode": "short-answer",
+                            "difficulty": "medium",
+                            "exam_relevance": "high",
+                            "needs_visuals": False,
+                        },
+                        {
+                            "item_id": "item_b",
+                            "block_id": "block_b",
+                            "prompt": "Explain beta.",
+                            "answer_mode": "short-answer",
+                            "difficulty": "medium",
+                            "exam_relevance": "high",
+                            "needs_visuals": False,
+                        },
+                        {
+                            "item_id": "item_c",
+                            "block_id": "block_c",
+                            "prompt": "Explain gamma.",
+                            "answer_mode": "short-answer",
+                            "difficulty": "medium",
+                            "exam_relevance": "medium",
+                            "needs_visuals": False,
+                        },
+                    ],
+                    visual_requirements=[],
+                )
+            )
+            day_one = engine.start_day("operating-systems-midterm", day_index=1, today="2026-04-23")
+            day_two = engine.start_day("operating-systems-midterm", day_index=2, today="2026-04-24")
+
+            self.assertEqual(day_one.applied_items, ["item_a", "item_b"])
+            self.assertEqual(day_two.applied_items, ["item_c"])
+
+    def test_start_day_rejects_unknown_course_without_creating_directories(self) -> None:
+        with TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            engine = StudyEngine(workspace)
+            missing_paths = build_course_paths(workspace, "missing-course")
+
+            with self.assertRaisesRegex(ValidationError, "unknown course_slug: missing-course"):
+                engine.start_day("missing-course", day_index=1, today="2026-04-23")
+
+            self.assertFalse(missing_paths.course_root.exists())

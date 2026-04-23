@@ -15,6 +15,7 @@ from study_os.core.validation import ValidationError, validate_close_session_req
 
 _IMPORTANCE_ORDER = {"high": 0, "medium": 1, "low": 2}
 _PRIORITY_ORDER = {"urgent": 0, "high": 1, "medium": 2, "low": 3}
+_NEW_BLOCKS_PER_DAY = 2
 
 
 class StudyEngine:
@@ -26,6 +27,10 @@ class StudyEngine:
         paths = build_course_paths(self.workspace_root, request.course.course_slug)
         paths.ensure_directories()
         store = CourseStore(paths)
+
+        for log_file in (paths.error_log_file, paths.session_history_file):
+            if log_file.exists():
+                log_file.unlink()
 
         store.save_course(request.course)
         store.save_blocks(request.blocks)
@@ -68,6 +73,8 @@ class StudyEngine:
         date.fromisoformat(today)
 
         paths = build_course_paths(self.workspace_root, course_slug)
+        if not paths.course_file.exists():
+            raise ValidationError(f"unknown course_slug: {course_slug}")
         paths.ensure_directories()
         store = CourseStore(paths)
 
@@ -82,14 +89,16 @@ class StudyEngine:
             items_by_block.setdefault(item.block_id, []).append(item)
         items_by_id = {item.item_id: item for item in items}
 
-        selected_blocks = sorted(
+        sorted_blocks = sorted(
             blocks,
             key=lambda block: (
                 _IMPORTANCE_ORDER.get(block.importance, len(_IMPORTANCE_ORDER)),
                 block.block_name,
                 block.block_id,
             ),
-        )[:2]
+        )
+        start_index = max(day_index - 1, 0) * _NEW_BLOCKS_PER_DAY
+        selected_blocks = sorted_blocks[start_index:start_index + _NEW_BLOCKS_PER_DAY]
         due_review_entries = [
             entry for entry in review_queue if entry.next_review_day is None or entry.next_review_day <= day_index
         ]

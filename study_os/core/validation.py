@@ -90,6 +90,7 @@ def validate_init_course_request(payload: dict) -> InitCourseRequest:
 
     blocks_raw = _require_list(payload["blocks"], "blocks")
     blocks: list[Block] = []
+    seen_block_ids: set[str] = set()
     for raw in blocks_raw:
         _require_keys(
             raw,
@@ -106,6 +107,9 @@ def validate_init_course_request(payload: dict) -> InitCourseRequest:
             "block",
         )
         block_id = _require_string(raw["block_id"], "block_id")
+        if block_id in seen_block_ids:
+            raise ValidationError(f"duplicate block_id: {block_id}")
+        seen_block_ids.add(block_id)
         block_name = _require_string(raw["block_name"], "block_name")
         block_type = _require_string(raw["block_type"], "block_type")
         importance = _require_string(raw["importance"], "importance")
@@ -129,6 +133,7 @@ def validate_init_course_request(payload: dict) -> InitCourseRequest:
     block_ids = {block.block_id for block in blocks}
     items_raw = _require_list(payload["items"], "items")
     items: list[Item] = []
+    seen_item_ids: set[str] = set()
     for raw in items_raw:
         _require_keys(
             raw,
@@ -144,6 +149,9 @@ def validate_init_course_request(payload: dict) -> InitCourseRequest:
             "item",
         )
         item_id = _require_string(raw["item_id"], "item_id")
+        if item_id in seen_item_ids:
+            raise ValidationError(f"duplicate item_id: {item_id}")
+        seen_item_ids.add(item_id)
         block_id = _require_string(raw["block_id"], "block_id")
         prompt = _require_string(raw["prompt"], "prompt")
         answer_mode = _require_string(raw["answer_mode"], "answer_mode")

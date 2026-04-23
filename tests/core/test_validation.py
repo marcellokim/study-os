@@ -135,6 +135,24 @@ class ValidationTest(unittest.TestCase):
         with self.assertRaises(ValidationError):
             validate_init_course_request(bool_payload)
 
+    def test_init_request_rejects_duplicate_block_ids(self) -> None:
+        payload = self._valid_init_payload()
+        payload["blocks"].append(
+            {
+                "block_id": "use_case_diagram",
+                "block_name": "Sequence Diagram",
+                "block_type": "compare-contrast",
+                "importance": "medium",
+                "difficulty": "medium",
+                "exam_relevance": "medium",
+                "needs_prereq": False,
+                "needs_visuals": False,
+            }
+        )
+
+        with self.assertRaisesRegex(ValidationError, "duplicate block_id: use_case_diagram"):
+            validate_init_course_request(payload)
+
     def test_init_request_rejects_non_string_block_id_in_item(self) -> None:
         payload = self._valid_init_payload()
         payload["items"][0]["block_id"] = ["use_case_diagram"]
@@ -152,6 +170,23 @@ class ValidationTest(unittest.TestCase):
             validate_init_course_request(string_payload)
         with self.assertRaises(ValidationError):
             validate_init_course_request(bool_payload)
+
+    def test_init_request_rejects_duplicate_item_ids(self) -> None:
+        payload = self._valid_init_payload()
+        payload["items"].append(
+            {
+                "item_id": "include_vs_extend",
+                "block_id": "use_case_diagram",
+                "prompt": "Explain actor generalization.",
+                "answer_mode": "short-answer",
+                "difficulty": "medium",
+                "exam_relevance": "medium",
+                "needs_visuals": False,
+            }
+        )
+
+        with self.assertRaisesRegex(ValidationError, "duplicate item_id: include_vs_extend"):
+            validate_init_course_request(payload)
 
     def test_init_request_rejects_malformed_source_manifest_fields(self) -> None:
         string_payload = self._valid_init_payload()

@@ -7,6 +7,7 @@ import sys
 from typing import Any
 
 from study_os.core.engine import StudyEngine
+from study_os.core.validation import ValidationError
 
 
 COMMAND_HELP = {
@@ -62,37 +63,40 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("a command is required")
 
     engine = StudyEngine(Path(parsed.workspace))
+    try:
+        if parsed.command == "init-course":
+            receipt = engine.initialize_course(_load_request_file(parsed.request_file))
+            print(receipt.status)
+            for path in receipt.generated_files:
+                print(path)
+            return 0
 
-    if parsed.command == "init-course":
-        receipt = engine.initialize_course(_load_request_file(parsed.request_file))
-        print(receipt.status)
-        for path in receipt.generated_files:
-            print(path)
-        return 0
+        if parsed.command == "start-day":
+            receipt = engine.start_day(parsed.course, day_index=parsed.day, today=parsed.today)
+            print(receipt.status)
+            for path in receipt.generated_files:
+                print(path)
+            return 0
 
-    if parsed.command == "start-day":
-        receipt = engine.start_day(parsed.course, day_index=parsed.day, today=parsed.today)
-        print(receipt.status)
-        for path in receipt.generated_files:
-            print(path)
-        return 0
+        if parsed.command == "close-session":
+            receipt = engine.close_session(_load_request_file(parsed.request_file))
+            print(receipt.status)
+            for path in receipt.generated_files:
+                print(path)
+            return 0
 
-    if parsed.command == "close-session":
-        receipt = engine.close_session(_load_request_file(parsed.request_file))
-        print(receipt.status)
-        for path in receipt.generated_files:
-            print(path)
-        return 0
+        if parsed.command == "start-final-recall":
+            receipt = engine.start_final_recall(parsed.course, today=parsed.today)
+            print(receipt.status)
+            for path in receipt.generated_files:
+                print(path)
+            return 0
 
-    if parsed.command == "start-final-recall":
-        receipt = engine.start_final_recall(parsed.course, today=parsed.today)
-        print(receipt.status)
-        for path in receipt.generated_files:
-            print(path)
-        return 0
-
-    if parsed.command == "status":
-        print(engine.status(parsed.course))
-        return 0
+        if parsed.command == "status":
+            print(engine.status(parsed.course))
+            return 0
+    except ValidationError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
 
     return 0

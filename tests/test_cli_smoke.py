@@ -223,6 +223,36 @@ class CliSmokeTest(unittest.TestCase):
             self.assertIn("2026-04-23", recall_file.read_text(encoding="utf-8"))
             self.assertIn('"current_day": 1', course_file.read_text(encoding="utf-8"))
 
+    def test_start_day_unknown_course_fails_cleanly_without_traceback(self) -> None:
+        with TemporaryDirectory() as tmp:
+            workspace = Path(tmp) / "workspace"
+
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "study_os",
+                    "--workspace",
+                    str(workspace),
+                    "start-day",
+                    "--course",
+                    "missing-course",
+                    "--day",
+                    "1",
+                    "--today",
+                    "2026-04-23",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(completed.returncode, 2)
+            self.assertEqual(completed.stdout, "")
+            self.assertIn("error: unknown course_slug: missing-course", completed.stderr)
+            self.assertNotIn("Traceback", completed.stderr)
+            self.assertFalse((workspace / "courses" / "missing-course").exists())
+
     def test_workspace_without_subcommand_returns_non_zero(self) -> None:
         with TemporaryDirectory() as tmp:
             completed = subprocess.run(

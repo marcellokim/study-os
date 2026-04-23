@@ -30,15 +30,23 @@ def _require_keys(payload: dict, keys: set[str], label: str) -> None:
         raise ValidationError(f"{label} is missing keys: {sorted(missing)}")
 
 
-def _require_iso_date(value: str, label: str) -> None:
+def _require_string(value: object, label: str) -> str:
+    if not isinstance(value, str):
+        raise ValidationError(f"{label} must be a string")
+    return value
+
+
+def _require_iso_date(value: object, label: str) -> None:
+    text = _require_string(value, label)
     try:
-        date.fromisoformat(value)
+        date.fromisoformat(text)
     except ValueError as exc:
         raise ValidationError(f"{label} must be YYYY-MM-DD") from exc
 
 
-def _validate_slug(value: str, label: str) -> None:
-    if not value or any(ch.isspace() for ch in value):
+def _validate_slug(value: object, label: str) -> None:
+    text = _require_string(value, label)
+    if not text or any(ch.isspace() for ch in text):
         raise ValidationError(f"{label} must be a non-empty slug without spaces")
 
 
@@ -48,7 +56,9 @@ def validate_init_course_request(payload: dict) -> InitCourseRequest:
     course_raw = payload["course"]
     _require_keys(course_raw, {"course_slug", "course_name", "exam_date", "timezone"}, "course")
     _validate_slug(course_raw["course_slug"], "course_slug")
+    _require_string(course_raw["course_name"], "course_name")
     _require_iso_date(course_raw["exam_date"], "exam_date")
+    _require_string(course_raw["timezone"], "timezone")
     course = CourseConfig(**course_raw)
 
     blocks: list[Block] = []
@@ -120,23 +130,31 @@ def validate_close_session_request(payload: dict, known_item_ids: set[str]) -> C
         _require_keys(raw, {"item_id", "phase", "result"}, "reviewed item")
         if raw["item_id"] not in known_item_ids:
             raise ValidationError(f"unknown item_id: {raw['item_id']}")
-        if raw["phase"] not in {"learning", "review"}:
-            raise ValidationError(f"unsupported phase: {raw['phase']}")
-        if raw["result"] not in _RESULT_VALUES:
-            raise ValidationError(f"unsupported result: {raw['result']}")
+        phase = _require_string(raw["phase"], "phase")
+        if phase not in {"learning", "review"}:
+            raise ValidationError(f"unsupported phase: {phase}")
+
+        result = _require_string(raw["result"], "result")
+        if result not in _RESULT_VALUES:
+            raise ValidationError(f"unsupported result: {result}")
 
         confidence = raw.get("confidence", Confidence.UNKNOWN.value)
+        confidence = _require_string(confidence, "confidence")
         if confidence not in _CONFIDENCE_VALUES:
             raise ValidationError(f"unsupported confidence: {confidence}")
 
         error_code = raw.get("error_code")
-        if error_code is not None and error_code not in _ERROR_CODE_VALUES:
-            raise ValidationError(f"unsupported error_code: {error_code}")
+        if error_code is not None:
+            error_code = _require_string(error_code, "error_code")
+            if error_code not in _ERROR_CODE_VALUES:
+                raise ValidationError(f"unsupported error_code: {error_code}")
 
         reviewed_items.append(ReviewedItemUpdate(**raw))
 
     day_index = payload.get("day_index")
-    if day_index is not None and (not isinstance(day_index, int) or day_index < 1):
+    if day_index is not None and (
+        isinstance(day_index, bool) or not isinstance(day_index, int) or day_index < 1
+    ):
         raise ValidationError("day_index must be a positive integer when provided")
 
     return CloseSessionRequest(

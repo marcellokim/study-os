@@ -246,6 +246,35 @@ class ValidationTest(unittest.TestCase):
         with self.assertRaises(ValidationError):
             validate_init_course_request(image_payload)
 
+    def test_init_request_rejects_visual_requirement_block_mismatch_for_item(self) -> None:
+        payload = self._valid_init_payload()
+        payload["blocks"].append(
+            {
+                "block_id": "sequence_diagram",
+                "block_name": "Sequence Diagram",
+                "block_type": "compare-contrast",
+                "importance": "medium",
+                "difficulty": "medium",
+                "exam_relevance": "medium",
+                "needs_prereq": False,
+                "needs_visuals": True,
+            }
+        )
+        payload["visual_requirements"] = [
+            {
+                "item_id": "include_vs_extend",
+                "block_id": "sequence_diagram",
+                "description": "Need the use-case relationship diagram.",
+                "required_image": "diagram.png",
+            }
+        ]
+
+        with self.assertRaisesRegex(
+            ValidationError,
+            "visual requirement item include_vs_extend must use block_id use_case_diagram, got sequence_diagram",
+        ):
+            validate_init_course_request(payload)
+
     def test_close_session_rejects_unknown_result(self) -> None:
         payload = self._valid_close_payload()
         payload["reviewed_items"][0]["result"] = "great"

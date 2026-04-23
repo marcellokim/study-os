@@ -177,6 +177,7 @@ class StudyEngine:
                 recent_error_codes.setdefault(item_id, []).append(error_code)
 
         applied_items: list[str] = []
+        held_items: list[str] = []
         warnings: list[str] = []
         wrote_error_row = False
         for reviewed in request.reviewed_items:
@@ -194,6 +195,10 @@ class StudyEngine:
             updated = apply_review_update(current, reviewed, request.session_date)
             if self._should_hold_visual_gated_promotion(current, updated, reviewed.phase, unresolved_visual):
                 updated = replace(updated, status=current.status)
+                held_items.append(reviewed.item_id)
+                warnings.append(
+                    f"Held promotion for {reviewed.item_id} because required visual is still missing."
+                )
             mastery[reviewed.item_id] = asdict(updated)
             applied_items.append(reviewed.item_id)
 
@@ -252,7 +257,7 @@ class StudyEngine:
                 "day_index": request.day_index,
                 "status": "applied",
                 "applied_items": applied_items,
-                "held_items": [],
+                "held_items": held_items,
                 "warnings": warnings,
             }
         )
@@ -268,7 +273,7 @@ class StudyEngine:
         return ExecutionReceipt(
             status="applied",
             applied_items=applied_items,
-            held_items=[],
+            held_items=held_items,
             generated_files=generated_files,
             warnings=warnings,
         )

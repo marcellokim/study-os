@@ -291,3 +291,95 @@ class CloseSessionWorkflowTest(unittest.TestCase):
             self.assertEqual(mastery["include_vs_extend"]["status"], "R1")
             self.assertEqual(queue[0]["status"], "R1")
             self.assertIn("visual pending", queue[0]["reason"])
+
+    def test_close_session_reports_held_visual_gated_promotion_in_receipt_and_history(self) -> None:
+        with TemporaryDirectory() as tmp:
+            engine = StudyEngine(Path(tmp))
+            engine.initialize_course(
+                {
+                    "course": {
+                        "course_slug": "operating-systems-midterm",
+                        "course_name": "Operating Systems Midterm",
+                        "exam_date": "2026-04-25",
+                        "timezone": "Asia/Seoul",
+                    },
+                    "blocks": [
+                        {
+                            "block_id": "use_case_diagram",
+                            "block_name": "Use Case Diagram",
+                            "block_type": "compare-contrast",
+                            "importance": "high",
+                            "difficulty": "medium",
+                            "exam_relevance": "high",
+                            "needs_prereq": False,
+                            "needs_visuals": True,
+                        }
+                    ],
+                    "items": [
+                        {
+                            "item_id": "include_vs_extend",
+                            "block_id": "use_case_diagram",
+                            "prompt": "Explain include vs extend.",
+                            "answer_mode": "short-answer",
+                            "difficulty": "medium",
+                            "exam_relevance": "high",
+                            "needs_visuals": True,
+                        }
+                    ],
+                    "visual_requirements": [
+                        {
+                            "item_id": "include_vs_extend",
+                            "block_id": "use_case_diagram",
+                            "description": "Need the UML arrow direction diagram.",
+                            "required_image": "uml-use-case-arrow.png",
+                            "status": "missing",
+                        }
+                    ],
+                }
+            )
+
+            paths = build_course_paths(Path(tmp), "operating-systems-midterm")
+            store = CourseStore(paths)
+            store.save_mastery(
+                {
+                    "include_vs_extend": asdict(
+                        MasteryRecord(
+                            item_id="include_vs_extend",
+                            block_id="use_case_diagram",
+                            status="R1",
+                            last_result="correct",
+                            last_confidence="medium",
+                        )
+                    )
+                }
+            )
+
+            receipt = engine.close_session(
+                {
+                    "course_slug": "operating-systems-midterm",
+                    "session_date": "2026-04-23",
+                    "day_index": 1,
+                    "reviewed_items": [
+                        {
+                            "item_id": "include_vs_extend",
+                            "phase": "review",
+                            "result": "correct",
+                            "confidence": "high",
+                            "note": "Verbal explanation was correct but the diagram is still missing.",
+                        }
+                    ],
+                }
+            )
+
+            sessions = store.load_session_history()
+
+            self.assertEqual(receipt.held_items, ["include_vs_extend"])
+            self.assertEqual(
+                receipt.warnings,
+                ["Held promotion for include_vs_extend because required visual is still missing."],
+            )
+            self.assertEqual(sessions[0]["held_items"], ["include_vs_extend"])
+            self.assertEqual(
+                sessions[0]["warnings"],
+                ["Held promotion for include_vs_extend because required visual is still missing."],
+            )

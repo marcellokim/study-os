@@ -30,11 +30,19 @@ python3 -m study_os --workspace . status --course operating-systems-midterm
 
 ## Real source smoke test
 
-Use this when you want to drop your own PDFs and text files into a private local workspace before building the real course decomposition.
+Use this when you want to drop your own PDFs and text files into a private local runtime workspace before Codex decomposes them into real study blocks/items. Keep private course materials outside this engine repository.
+
+Recommended runtime workspace:
+
+```text
+/Users/ydmac/Documents/study-workspace
+```
+
+Create or refresh source buckets and a starter source inventory:
 
 ```bash
 python3 scripts/prepare_real_course.py \
-  --workspace . \
+  --workspace /Users/ydmac/Documents/study-workspace \
   --course-slug operating-systems-midterm \
   --course-name "Operating Systems Midterm" \
   --exam-date 2026-05-20
@@ -43,7 +51,7 @@ python3 scripts/prepare_real_course.py \
 Put files under the generated source buckets:
 
 ```text
-courses/operating-systems-midterm/sources/
+/Users/ydmac/Documents/study-workspace/courses/operating-systems-midterm/sources/
   syllabus/      # .pdf, .txt, .md
   slides/        # .pdf, .txt, .md
   transcripts/   # .txt, .md
@@ -55,27 +63,27 @@ Refresh the generated request so it indexes the files you added:
 
 ```bash
 python3 scripts/prepare_real_course.py \
-  --workspace . \
+  --workspace /Users/ydmac/Documents/study-workspace \
   --course-slug operating-systems-midterm \
   --course-name "Operating Systems Midterm" \
   --exam-date 2026-05-20 \
   --overwrite
 ```
 
-Then validate the referenced source files and initialize the course:
+Then validate the referenced source files and initialize the course from the runtime workspace wrapper:
 
 ```bash
-python3 -m study_os --workspace . init-course \
+cd /Users/ydmac/Documents/study-workspace
+./study-os init-course \
   --request-file courses/operating-systems-midterm/init_request.json \
   --validate-sources
 ```
 
 `--validate-sources` checks that manifest paths stay inside the workspace, files exist and are non-empty, PDFs start with a PDF header, and text-like files are UTF-8. The generated request is only a starter source inventory; after this smoke test, Codex should read the indexed sources and replace the inventory placeholder with exam-scope blocks/items before the real study run.
 
-
 ## Where to put source files
 
-Runtime course workspaces live under `courses/<course_slug>/`. The source-material drop zone is:
+Runtime course workspaces should live outside the engine repo, usually under `/Users/ydmac/Documents/study-workspace/courses/<course_slug>/`. The source-material drop zone is:
 
 ```text
 courses/<course_slug>/sources/
@@ -88,14 +96,7 @@ courses/<course_slug>/sources/
 
 `init-course` creates this folder structure automatically and preserves existing files in `sources/` when you reinitialize a course. Root-level `courses/` is ignored by Git so private PDFs, transcripts, and notes do not get published accidentally.
 
-A tracked template is available at `workspace_template/courses/sample-course/sources/`. To start from it:
-
-```bash
-cp -R workspace_template/courses .
-python3 -m study_os --workspace . init-course --request-file examples/sample_init_request.json
-```
-
-Then replace the placeholder source paths in `examples/sample_init_request.json` with your real files, or create a new request file for your course slug.
+A tracked template is available at `workspace_template/courses/sample-course/sources/` for public examples. Do not copy private source material into this engine repository.
 
 ## File-format rule
 

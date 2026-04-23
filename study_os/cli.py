@@ -38,8 +38,12 @@ def build_parser() -> argparse.ArgumentParser:
     close_session_parser = subparsers.add_parser("close-session", help=COMMAND_HELP["close-session"])
     close_session_parser.add_argument("--request-file", required=True)
 
-    for name in ("start-final-recall", "status"):
-        subparsers.add_parser(name, help=COMMAND_HELP[name])
+    final_recall_parser = subparsers.add_parser("start-final-recall", help=COMMAND_HELP["start-final-recall"])
+    final_recall_parser.add_argument("--course", required=True)
+    final_recall_parser.add_argument("--today", required=True)
+
+    status_parser = subparsers.add_parser("status", help=COMMAND_HELP["status"])
+    status_parser.add_argument("--course", required=True)
 
     return parser
 
@@ -78,6 +82,17 @@ def main(argv: list[str] | None = None) -> int:
         print(receipt.status)
         for path in receipt.generated_files:
             print(path)
+        return 0
+
+    if parsed.command == "start-final-recall":
+        receipt = engine.start_final_recall(parsed.course, today=parsed.today)
+        print(receipt.status)
+        for path in receipt.generated_files:
+            print(path)
+        return 0
+
+    if parsed.command == "status":
+        print(engine.status(parsed.course))
         return 0
 
     return 0

@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from study_os.core.models import Block, CourseConfig, ExecutionReceipt, Item, MasteryRecord, QueueEntry, VisualRequirement
-from study_os.core.packets import build_learning_packet, build_master_plan, build_recall_packet
+from study_os.core.packets import build_final_recall_pack, build_learning_packet, build_master_plan, build_recall_packet
 from study_os.core.paths import build_course_paths
 from study_os.core.scheduler import build_queue_entry
 from study_os.core.storage import CourseStore
@@ -244,6 +244,78 @@ class StudyEngine:
             generated_files=generated_files,
             warnings=warnings,
         )
+
+    def start_final_recall(self, course_slug: str, *, today: str) -> ExecutionReceipt:
+        date.fromisoformat(today)
+
+        paths = build_course_paths(self.workspace_root, course_slug)
+        if not paths.course_file.exists():
+            raise ValidationError(f"unknown course_slug: {course_slug}")
+
+        store = CourseStore(paths)
+        course = CourseConfig(**store.load_course())
+        blocks = {row["block_id"]: Block(**row) for row in store.load_blocks()}
+        items = {row["item_id"]: Item(**row) for row in store.load_items()}
+        visuals = [VisualRequirement(**row) for row in store.load_visual_requirements()]
+        queue = [QueueEntry(**row) for row in store.load_review_queue()]
+
+        ranked_queue = sorted(
+            queue,
+            key=lambda entry: (
+                _PRIORITY_ORDER.get(entry.priority, len(_PRIORITY_ORDER)),
+                entry.next_review_date or "",
+                entry.item_id,
+            ),
+        )
+        relevant_item_ids = {entry.item_id for entry in ranked_queue}
+        ranked_visuals = [visual for visual in visuals if visual.item_id in relevant_item_ids]
+
+        paths.final_recall_file.write_text(
+            build_final_recall_pack(course, ranked_queue, items, blocks, ranked_visuals),
+            encoding="utf-8",
+        )
+
+        return ExecutionReceipt(
+            status="applied",
+            applied_items=[entry.item_id for entry in ranked_queue],
+            held_items=[],
+            generated_files=[str(paths.final_recall_file)],
+            warnings=[],
+        )
+
+    def status(self, course_slug: str) -> str:
+        paths = build_course_paths(self.workspace_root, course_slug)
+        if not paths.course_file.exists():
+            raise ValidationError(f"unknown course_slug: {course_slug}")
+
+        store = CourseStore(paths)
+        mastery = store.load_mastery()
+        queue = [
+            QueueEntry(**row)
+            for row in sorted(
+                store.load_review_queue(),
+                key=lambda row: (
+                    _PRIORITY_ORDER.get(row["priority"], len(_PRIORITY_ORDER)),
+                    row["next_review_date"] or "",
+                    row["item_id"],
+                ),
+            )
+        ]
+
+        lines = [
+            f"Course: {course_slug}",
+            f"Tracked items: {len(mastery)}",
+            f"Queued items: {len(queue)}",
+            "Top queue entries:",
+        ]
+        if not queue:
+            lines.append("- None")
+        else:
+            for entry in queue[:5]:
+                lines.append(
+                    f"- {entry.item_id} [{entry.status}] {entry.priority} -> {entry.next_review_date} ({entry.reason})"
+                )
+        return "\n".join(lines)
 
     def _refresh_workspace_md(self) -> None:
         courses_root = self.workspace_root / "courses"

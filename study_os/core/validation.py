@@ -24,7 +24,9 @@ _CONFIDENCE_VALUES = {level.value for level in Confidence}
 _ERROR_CODE_VALUES = {code.value for code in ErrorCode}
 
 
-def _require_keys(payload: dict, keys: set[str], label: str) -> None:
+def _require_keys(payload: object, keys: set[str], label: str) -> None:
+    if not isinstance(payload, dict):
+        raise ValidationError(f"{label} must be an object")
     missing = keys.difference(payload)
     if missing:
         raise ValidationError(f"{label} is missing keys: {sorted(missing)}")
@@ -34,6 +36,18 @@ def _require_string(value: object, label: str) -> str:
     if not isinstance(value, str):
         raise ValidationError(f"{label} must be a string")
     return value
+
+
+def _require_bool(value: object, label: str) -> bool:
+    if not isinstance(value, bool):
+        raise ValidationError(f"{label} must be a boolean")
+    return value
+
+
+def _require_optional_string(value: object, label: str, default: str = "") -> str:
+    if value is None:
+        return default
+    return _require_string(value, label)
 
 
 def _require_iso_date(value: object, label: str) -> None:
@@ -55,11 +69,18 @@ def validate_init_course_request(payload: dict) -> InitCourseRequest:
 
     course_raw = payload["course"]
     _require_keys(course_raw, {"course_slug", "course_name", "exam_date", "timezone"}, "course")
-    _validate_slug(course_raw["course_slug"], "course_slug")
-    _require_string(course_raw["course_name"], "course_name")
-    _require_iso_date(course_raw["exam_date"], "exam_date")
-    _require_string(course_raw["timezone"], "timezone")
-    course = CourseConfig(**course_raw)
+    course_slug = _require_string(course_raw["course_slug"], "course_slug")
+    _validate_slug(course_slug, "course_slug")
+    course_name = _require_string(course_raw["course_name"], "course_name")
+    exam_date = _require_string(course_raw["exam_date"], "exam_date")
+    _require_iso_date(exam_date, "exam_date")
+    timezone = _require_string(course_raw["timezone"], "timezone")
+    course = CourseConfig(
+        course_slug=course_slug,
+        course_name=course_name,
+        exam_date=exam_date,
+        timezone=timezone,
+    )
 
     blocks: list[Block] = []
     for raw in payload["blocks"]:
@@ -78,7 +99,25 @@ def validate_init_course_request(payload: dict) -> InitCourseRequest:
             "block",
         )
         block_id = _require_string(raw["block_id"], "block_id")
-        blocks.append(Block(**{**raw, "block_id": block_id}))
+        block_name = _require_string(raw["block_name"], "block_name")
+        block_type = _require_string(raw["block_type"], "block_type")
+        importance = _require_string(raw["importance"], "importance")
+        difficulty = _require_string(raw["difficulty"], "difficulty")
+        exam_relevance = _require_string(raw["exam_relevance"], "exam_relevance")
+        needs_prereq = _require_bool(raw["needs_prereq"], "needs_prereq")
+        needs_visuals = _require_bool(raw["needs_visuals"], "needs_visuals")
+        blocks.append(
+            Block(
+                block_id=block_id,
+                block_name=block_name,
+                block_type=block_type,
+                importance=importance,
+                difficulty=difficulty,
+                exam_relevance=exam_relevance,
+                needs_prereq=needs_prereq,
+                needs_visuals=needs_visuals,
+            )
+        )
 
     block_ids = {block.block_id for block in blocks}
     items: list[Item] = []
@@ -98,29 +137,65 @@ def validate_init_course_request(payload: dict) -> InitCourseRequest:
         )
         item_id = _require_string(raw["item_id"], "item_id")
         block_id = _require_string(raw["block_id"], "block_id")
+        prompt = _require_string(raw["prompt"], "prompt")
+        answer_mode = _require_string(raw["answer_mode"], "answer_mode")
+        difficulty = _require_string(raw["difficulty"], "difficulty")
+        exam_relevance = _require_string(raw["exam_relevance"], "exam_relevance")
+        needs_visuals = _require_bool(raw["needs_visuals"], "needs_visuals")
         if block_id not in block_ids:
             raise ValidationError(f"item {item_id} references unknown block {block_id}")
-        items.append(Item(**{**raw, "item_id": item_id, "block_id": block_id}))
+        items.append(
+            Item(
+                item_id=item_id,
+                block_id=block_id,
+                prompt=prompt,
+                answer_mode=answer_mode,
+                difficulty=difficulty,
+                exam_relevance=exam_relevance,
+                needs_visuals=needs_visuals,
+            )
+        )
 
     item_ids = {item.item_id for item in items}
     source_manifest: list[SourceLink] = []
     for raw in payload.get("source_manifest", []):
         _require_keys(raw, {"block_id", "source_type", "path"}, "source manifest row")
         block_id = _require_string(raw["block_id"], "block_id")
+        source_type = _require_string(raw["source_type"], "source_type")
+        path = _require_string(raw["path"], "path")
+        note = _require_optional_string(raw.get("note"), "note")
         if block_id not in block_ids:
             raise ValidationError(f"unknown source block_id: {block_id}")
-        source_manifest.append(SourceLink(**{**raw, "block_id": block_id}))
+        source_manifest.append(
+            SourceLink(
+                block_id=block_id,
+                source_type=source_type,
+                path=path,
+                note=note,
+            )
+        )
 
     visual_requirements: list[VisualRequirement] = []
     for raw in payload.get("visual_requirements", []):
         _require_keys(raw, {"item_id", "block_id", "description", "required_image"}, "visual requirement")
         item_id = _require_string(raw["item_id"], "item_id")
         block_id = _require_string(raw["block_id"], "block_id")
+        description = _require_string(raw["description"], "description")
+        required_image = _require_string(raw["required_image"], "required_image")
+        status = _require_optional_string(raw.get("status"), "status", default="missing")
         if item_id not in item_ids:
             raise ValidationError(f"unknown visual item_id: {item_id}")
         if block_id not in block_ids:
             raise ValidationError(f"unknown visual block_id: {block_id}")
-        visual_requirements.append(VisualRequirement(**{**raw, "item_id": item_id, "block_id": block_id}))
+        visual_requirements.append(
+            VisualRequirement(
+                item_id=item_id,
+                block_id=block_id,
+                description=description,
+                required_image=required_image,
+                status=status,
+            )
+        )
 
     return InitCourseRequest(
         course=course,
@@ -133,8 +208,10 @@ def validate_init_course_request(payload: dict) -> InitCourseRequest:
 
 def validate_close_session_request(payload: dict, known_item_ids: set[str]) -> CloseSessionRequest:
     _require_keys(payload, {"course_slug", "session_date", "reviewed_items"}, "close session request")
-    _validate_slug(payload["course_slug"], "course_slug")
-    _require_iso_date(payload["session_date"], "session_date")
+    course_slug = _require_string(payload["course_slug"], "course_slug")
+    _validate_slug(course_slug, "course_slug")
+    session_date = _require_string(payload["session_date"], "session_date")
+    _require_iso_date(session_date, "session_date")
 
     reviewed_items: list[ReviewedItemUpdate] = []
     for raw in payload["reviewed_items"]:
@@ -150,8 +227,7 @@ def validate_close_session_request(payload: dict, known_item_ids: set[str]) -> C
         if result not in _RESULT_VALUES:
             raise ValidationError(f"unsupported result: {result}")
 
-        confidence = raw.get("confidence", Confidence.UNKNOWN.value)
-        confidence = _require_string(confidence, "confidence")
+        confidence = _require_string(raw.get("confidence", Confidence.UNKNOWN.value), "confidence")
         if confidence not in _CONFIDENCE_VALUES:
             raise ValidationError(f"unsupported confidence: {confidence}")
 
@@ -161,7 +237,17 @@ def validate_close_session_request(payload: dict, known_item_ids: set[str]) -> C
             if error_code not in _ERROR_CODE_VALUES:
                 raise ValidationError(f"unsupported error_code: {error_code}")
 
-        reviewed_items.append(ReviewedItemUpdate(**{**raw, "item_id": item_id}))
+        note = _require_optional_string(raw.get("note"), "note")
+        reviewed_items.append(
+            ReviewedItemUpdate(
+                item_id=item_id,
+                phase=phase,
+                result=result,
+                confidence=confidence,
+                error_code=error_code,
+                note=note,
+            )
+        )
 
     day_index = payload.get("day_index")
     if day_index is not None and (
@@ -170,8 +256,8 @@ def validate_close_session_request(payload: dict, known_item_ids: set[str]) -> C
         raise ValidationError("day_index must be a positive integer when provided")
 
     return CloseSessionRequest(
-        course_slug=payload["course_slug"],
-        session_date=payload["session_date"],
+        course_slug=course_slug,
+        session_date=session_date,
         reviewed_items=reviewed_items,
         day_index=day_index,
     )

@@ -293,6 +293,39 @@ class ValidationTest(unittest.TestCase):
         ):
             validate_init_course_request(payload)
 
+    def test_init_request_rejects_visual_requirement_for_non_visual_item_or_block(self) -> None:
+        non_visual_item_payload = self._valid_init_payload()
+        non_visual_item_payload["items"][0]["needs_visuals"] = False
+        non_visual_item_payload["visual_requirements"] = [
+            {
+                "item_id": "include_vs_extend",
+                "block_id": "use_case_diagram",
+                "description": "Need the use-case relationship diagram.",
+                "required_image": "diagram.png",
+            }
+        ]
+        non_visual_block_payload = self._valid_init_payload()
+        non_visual_block_payload["blocks"][0]["needs_visuals"] = False
+        non_visual_block_payload["visual_requirements"] = [
+            {
+                "item_id": "include_vs_extend",
+                "block_id": "use_case_diagram",
+                "description": "Need the use-case relationship diagram.",
+                "required_image": "diagram.png",
+            }
+        ]
+
+        with self.assertRaisesRegex(
+            ValidationError,
+            "visual requirement item include_vs_extend must have needs_visuals=True",
+        ):
+            validate_init_course_request(non_visual_item_payload)
+        with self.assertRaisesRegex(
+            ValidationError,
+            "visual requirement block use_case_diagram must have needs_visuals=True",
+        ):
+            validate_init_course_request(non_visual_block_payload)
+
     def test_close_session_rejects_unknown_result(self) -> None:
         payload = self._valid_close_payload()
         payload["reviewed_items"][0]["result"] = "great"

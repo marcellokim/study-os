@@ -198,8 +198,10 @@ def validate_init_course_request(payload: dict) -> InitCourseRequest:
             )
         )
 
+    block_needs_visuals = {block.block_id: block.needs_visuals for block in blocks}
     item_ids = {item.item_id for item in items}
     item_block_ids = {item.item_id: item.block_id for item in items}
+    item_needs_visuals = {item.item_id: item.needs_visuals for item in items}
     source_manifest_raw = _require_list(payload.get("source_manifest", []), "source_manifest")
     source_manifest: list[SourceLink] = []
     for raw in source_manifest_raw:
@@ -237,6 +239,10 @@ def validate_init_course_request(payload: dict) -> InitCourseRequest:
             raise ValidationError(
                 f"visual requirement item {item_id} must use block_id {expected_block_id}, got {block_id}"
             )
+        if not block_needs_visuals[block_id]:
+            raise ValidationError(f"visual requirement block {block_id} must have needs_visuals=True")
+        if not item_needs_visuals[item_id]:
+            raise ValidationError(f"visual requirement item {item_id} must have needs_visuals=True")
         visual_requirements.append(
             VisualRequirement(
                 item_id=item_id,

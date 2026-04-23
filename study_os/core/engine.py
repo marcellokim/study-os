@@ -27,6 +27,10 @@ _PRIORITY_ORDER = {"urgent": 0, "high": 1, "medium": 2, "low": 3}
 _NEW_BLOCKS_PER_DAY = 2
 
 
+def _pending_visual_requirements(visuals: list[VisualRequirement]) -> list[VisualRequirement]:
+    return [visual for visual in visuals if visual.status != "available"]
+
+
 class StudyEngine:
     def __init__(self, workspace_root: Path) -> None:
         self.workspace_root = workspace_root
@@ -94,7 +98,9 @@ class StudyEngine:
         course = CourseConfig(**store.load_course())
         blocks = [Block(**payload) for payload in store.load_blocks()]
         items = [Item(**payload) for payload in store.load_items()]
-        visuals = [VisualRequirement(**payload) for payload in store.load_visual_requirements()]
+        visuals = _pending_visual_requirements(
+            [VisualRequirement(**payload) for payload in store.load_visual_requirements()]
+        )
         review_queue = [QueueEntry(**payload) for payload in store.load_review_queue()]
 
         items_by_block: dict[str, list[Item]] = {}
@@ -162,6 +168,7 @@ class StudyEngine:
         items = [Item(**row) for row in store.load_items()]
         blocks = [Block(**row) for row in store.load_blocks()]
         visuals = [VisualRequirement(**row) for row in store.load_visual_requirements()]
+        pending_visuals = _pending_visual_requirements(visuals)
         request = validate_close_session_request(payload, {item.item_id for item in items})
 
         course = CourseConfig(**store.load_course())
@@ -183,8 +190,8 @@ class StudyEngine:
         for reviewed in request.reviewed_items:
             item = item_by_id[reviewed.item_id]
             unresolved_visual = item.needs_visuals and any(
-                visual.item_id == reviewed.item_id and visual.status != "available"
-                for visual in visuals
+                visual.item_id == reviewed.item_id
+                for visual in pending_visuals
             )
             current = MasteryRecord(
                 **mastery.get(
@@ -224,8 +231,8 @@ class StudyEngine:
             item = item_by_id[item_id]
             block = block_by_id[item.block_id]
             unresolved_visual = any(
-                visual.item_id == item_id and visual.status != "available"
-                for visual in visuals
+                visual.item_id == item_id
+                for visual in pending_visuals
             )
             queue_entry = build_queue_entry(
                 record,
@@ -290,7 +297,9 @@ class StudyEngine:
         course = CourseConfig(**store.load_course())
         blocks = {row["block_id"]: Block(**row) for row in store.load_blocks()}
         items = {row["item_id"]: Item(**row) for row in store.load_items()}
-        visuals = [VisualRequirement(**row) for row in store.load_visual_requirements()]
+        visuals = _pending_visual_requirements(
+            [VisualRequirement(**row) for row in store.load_visual_requirements()]
+        )
         queue = [QueueEntry(**row) for row in store.load_review_queue()]
 
         ranked_queue = sorted(

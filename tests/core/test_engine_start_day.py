@@ -225,3 +225,48 @@ class StartDayWorkflowTest(unittest.TestCase):
                 engine.start_day("missing-course", day_index=1, today="2026-04-23")
 
             self.assertFalse(missing_paths.course_root.exists())
+
+    def test_start_day_excludes_available_visuals_from_user_packets(self) -> None:
+        with TemporaryDirectory() as tmp:
+            engine = StudyEngine(Path(tmp))
+            engine.initialize_course(
+                self._course_payload(
+                    visual_requirements=[
+                        {
+                            "item_id": "include_vs_extend",
+                            "block_id": "use_case_diagram",
+                            "description": "Need the UML arrow direction diagram.",
+                            "required_image": "uml-use-case-arrow.png",
+                            "status": "available",
+                        }
+                    ]
+                )
+            )
+
+            paths = build_course_paths(Path(tmp), "operating-systems-midterm")
+            store = CourseStore(paths)
+            store.save_review_queue(
+                [
+                    {
+                        "item_id": "include_vs_extend",
+                        "block_id": "use_case_diagram",
+                        "status": "R0",
+                        "priority": "urgent",
+                        "last_result": "wrong",
+                        "confidence": "high",
+                        "next_review_day": 1,
+                        "next_review_date": "2026-04-23",
+                        "reason": "comparison confusion",
+                    }
+                ]
+            )
+
+            engine.start_day("operating-systems-midterm", day_index=1, today="2026-04-23")
+
+            learning_text = paths.daily_dir.joinpath("day_01_learning.md").read_text(encoding="utf-8")
+            recall_text = paths.daily_dir.joinpath("day_01_recall.md").read_text(encoding="utf-8")
+
+            self.assertIn("## Required visuals\n- None", learning_text)
+            self.assertIn("## Visual gate checks\n- None", recall_text)
+            self.assertNotIn("uml-use-case-arrow.png", learning_text)
+            self.assertNotIn("uml-use-case-arrow.png", recall_text)

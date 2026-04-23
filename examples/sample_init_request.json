@@ -1,0 +1,79 @@
+{
+  "course": {
+    "course_slug": "sample-course",
+    "course_name": "Sample Course Midterm",
+    "exam_date": "2026-05-20",
+    "timezone": "Asia/Seoul"
+  },
+  "blocks": [
+    {
+      "block_id": "syllabus_scope",
+      "block_name": "Exam Scope From Syllabus",
+      "block_type": "concept-definition",
+      "importance": "high",
+      "difficulty": "low",
+      "exam_relevance": "high",
+      "needs_prereq": false,
+      "needs_visuals": false
+    },
+    {
+      "block_id": "diagram_interpretation",
+      "block_name": "Diagram Interpretation",
+      "block_type": "diagram-interpretation",
+      "importance": "high",
+      "difficulty": "medium",
+      "exam_relevance": "high",
+      "needs_prereq": false,
+      "needs_visuals": true
+    }
+  ],
+  "items": [
+    {
+      "item_id": "scope_keywords",
+      "block_id": "syllabus_scope",
+      "prompt": "List the exam-scope keywords and explain why each one matters.",
+      "answer_mode": "short-answer",
+      "difficulty": "low",
+      "exam_relevance": "high",
+      "needs_visuals": false
+    },
+    {
+      "item_id": "diagram_axis_trend",
+      "block_id": "diagram_interpretation",
+      "prompt": "Explain the diagram's axes, trend, and one likely exam trap.",
+      "answer_mode": "oral-recall",
+      "difficulty": "medium",
+      "exam_relevance": "high",
+      "needs_visuals": true
+    }
+  ],
+  "source_manifest": [
+    {
+      "block_id": "syllabus_scope",
+      "source_type": "syllabus",
+      "path": "courses/sample-course/sources/syllabus/syllabus.pdf",
+      "note": "Original syllabus or exam-scope handout."
+    },
+    {
+      "block_id": "diagram_interpretation",
+      "source_type": "slides",
+      "path": "courses/sample-course/sources/slides/week01.pdf",
+      "note": "Original lecture slide deck."
+    },
+    {
+      "block_id": "diagram_interpretation",
+      "source_type": "transcript",
+      "path": "courses/sample-course/sources/transcripts/week01.txt",
+      "note": "Lecture transcript or extracted text layer."
+    }
+  ],
+  "visual_requirements": [
+    {
+      "item_id": "diagram_axis_trend",
+      "block_id": "diagram_interpretation",
+      "description": "Need the actual chart or diagram image before promoting this item.",
+      "required_image": "courses/sample-course/sources/images/week01-diagram.png",
+      "status": "missing"
+    }
+  ]
+}

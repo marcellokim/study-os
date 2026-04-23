@@ -1,0 +1,22 @@
+{
+  "course_slug": "sample-course",
+  "session_date": "2026-04-23",
+  "day_index": 1,
+  "reviewed_items": [
+    {
+      "item_id": "scope_keywords",
+      "phase": "learning",
+      "result": "correct",
+      "confidence": "medium",
+      "note": "Recovered the scope keywords without checking notes."
+    },
+    {
+      "item_id": "diagram_axis_trend",
+      "phase": "learning",
+      "result": "wrong",
+      "confidence": "high",
+      "error_code": "C6",
+      "note": "Overconfident diagram interpretation; required image is still missing."
+    }
+  ]
+}

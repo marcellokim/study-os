@@ -46,6 +46,9 @@ def main(argv: list[str] | None = None) -> int:
 
     parsed = parser.parse_args(args)
 
+    if parsed.command is None:
+        parser.error("a command is required")
+
     if parsed.command == "init-course":
         engine = StudyEngine(Path(parsed.workspace))
         receipt = engine.initialize_course(_load_request_file(parsed.request_file))

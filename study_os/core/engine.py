@@ -10,6 +10,7 @@ from study_os.core.models import Block, CourseConfig, ExecutionReceipt, Item, Ma
 from study_os.core.packets import build_final_recall_pack, build_learning_packet, build_master_plan, build_recall_packet
 from study_os.core.paths import build_course_paths
 from study_os.core.scheduler import build_queue_entry
+from study_os.core.source_files import validate_source_files
 from study_os.core.storage import CourseStore
 from study_os.core.transitions import apply_review_update
 from study_os.core.validation import (
@@ -35,8 +36,10 @@ class StudyEngine:
     def __init__(self, workspace_root: Path) -> None:
         self.workspace_root = workspace_root
 
-    def initialize_course(self, payload: dict[str, Any]) -> ExecutionReceipt:
+    def initialize_course(self, payload: dict[str, Any], *, validate_sources: bool = False) -> ExecutionReceipt:
         request = validate_init_course_request(payload)
+        if validate_sources:
+            validate_source_files(self.workspace_root, request.source_manifest, request.visual_requirements)
         paths = build_course_paths(self.workspace_root, request.course.course_slug)
         if paths.outputs_dir.exists():
             shutil.rmtree(paths.outputs_dir)

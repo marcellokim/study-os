@@ -52,6 +52,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     init_parser = subparsers.add_parser("init-course", help=COMMAND_HELP["init-course"])
     init_parser.add_argument("--request-file", required=True)
+    init_parser.add_argument(
+        "--validate-sources",
+        action="store_true",
+        help="Require source_manifest files and available visual files to exist under the workspace.",
+    )
 
     start_day_parser = subparsers.add_parser("start-day", help=COMMAND_HELP["start-day"])
     start_day_parser.add_argument("--course", required=True)
@@ -87,7 +92,10 @@ def main(argv: list[str] | None = None) -> int:
     engine = StudyEngine(Path(parsed.workspace))
     try:
         if parsed.command == "init-course":
-            receipt = engine.initialize_course(_load_request_file(parsed.request_file))
+            receipt = engine.initialize_course(
+                _load_request_file(parsed.request_file),
+                validate_sources=parsed.validate_sources,
+            )
             _print_receipt(receipt)
             return 0
 

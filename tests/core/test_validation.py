@@ -69,20 +69,47 @@ class ValidationTest(unittest.TestCase):
         with self.assertRaises(ValidationError):
             validate_init_course_request(payload)
 
+    def test_init_request_rejects_scalar_collection_fields(self) -> None:
+        blocks_payload = self._valid_init_payload()
+        blocks_payload["blocks"] = 1
+        items_payload = self._valid_init_payload()
+        items_payload["items"] = 1
+        sources_payload = self._valid_init_payload()
+        sources_payload["source_manifest"] = 1
+        visuals_payload = self._valid_init_payload()
+        visuals_payload["visual_requirements"] = 1
+
+        with self.assertRaises(ValidationError):
+            validate_init_course_request(blocks_payload)
+        with self.assertRaises(ValidationError):
+            validate_init_course_request(items_payload)
+        with self.assertRaises(ValidationError):
+            validate_init_course_request(sources_payload)
+        with self.assertRaises(ValidationError):
+            validate_init_course_request(visuals_payload)
+
     def test_init_request_rejects_non_object_rows(self) -> None:
         course_payload = self._valid_init_payload()
         course_payload["course"] = ["not-an-object"]
         blocks_payload = self._valid_init_payload()
         blocks_payload["blocks"] = ["not-an-object"]
+        items_payload = self._valid_init_payload()
+        items_payload["items"] = ["not-an-object"]
         source_payload = self._valid_init_payload()
         source_payload["source_manifest"] = ["not-an-object"]
+        visual_payload = self._valid_init_payload()
+        visual_payload["visual_requirements"] = ["not-an-object"]
 
         with self.assertRaisesRegex(ValidationError, "course must be an object"):
             validate_init_course_request(course_payload)
         with self.assertRaisesRegex(ValidationError, "block must be an object"):
             validate_init_course_request(blocks_payload)
+        with self.assertRaisesRegex(ValidationError, "item must be an object"):
+            validate_init_course_request(items_payload)
         with self.assertRaisesRegex(ValidationError, "source manifest row must be an object"):
             validate_init_course_request(source_payload)
+        with self.assertRaisesRegex(ValidationError, "visual requirement must be an object"):
+            validate_init_course_request(visual_payload)
 
     def test_init_request_rejects_unknown_source_manifest_block_id(self) -> None:
         payload = self._valid_init_payload()
@@ -178,6 +205,13 @@ class ValidationTest(unittest.TestCase):
     def test_close_session_rejects_unknown_result(self) -> None:
         payload = self._valid_close_payload()
         payload["reviewed_items"][0]["result"] = "great"
+
+        with self.assertRaises(ValidationError):
+            validate_close_session_request(payload, {"include_vs_extend"})
+
+    def test_close_session_rejects_scalar_reviewed_items(self) -> None:
+        payload = self._valid_close_payload()
+        payload["reviewed_items"] = 1
 
         with self.assertRaises(ValidationError):
             validate_close_session_request(payload, {"include_vs_extend"})

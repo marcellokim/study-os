@@ -44,6 +44,12 @@ def _require_bool(value: object, label: str) -> bool:
     return value
 
 
+def _require_list(value: object, label: str) -> list:
+    if not isinstance(value, list):
+        raise ValidationError(f"{label} must be a list")
+    return value
+
+
 def _require_optional_string(value: object, label: str, default: str = "") -> str:
     if value is None:
         return default
@@ -82,8 +88,9 @@ def validate_init_course_request(payload: dict) -> InitCourseRequest:
         timezone=timezone,
     )
 
+    blocks_raw = _require_list(payload["blocks"], "blocks")
     blocks: list[Block] = []
-    for raw in payload["blocks"]:
+    for raw in blocks_raw:
         _require_keys(
             raw,
             {
@@ -120,8 +127,9 @@ def validate_init_course_request(payload: dict) -> InitCourseRequest:
         )
 
     block_ids = {block.block_id for block in blocks}
+    items_raw = _require_list(payload["items"], "items")
     items: list[Item] = []
-    for raw in payload["items"]:
+    for raw in items_raw:
         _require_keys(
             raw,
             {
@@ -157,8 +165,9 @@ def validate_init_course_request(payload: dict) -> InitCourseRequest:
         )
 
     item_ids = {item.item_id for item in items}
+    source_manifest_raw = _require_list(payload.get("source_manifest", []), "source_manifest")
     source_manifest: list[SourceLink] = []
-    for raw in payload.get("source_manifest", []):
+    for raw in source_manifest_raw:
         _require_keys(raw, {"block_id", "source_type", "path"}, "source manifest row")
         block_id = _require_string(raw["block_id"], "block_id")
         source_type = _require_string(raw["source_type"], "source_type")
@@ -175,8 +184,9 @@ def validate_init_course_request(payload: dict) -> InitCourseRequest:
             )
         )
 
+    visual_requirements_raw = _require_list(payload.get("visual_requirements", []), "visual_requirements")
     visual_requirements: list[VisualRequirement] = []
-    for raw in payload.get("visual_requirements", []):
+    for raw in visual_requirements_raw:
         _require_keys(raw, {"item_id", "block_id", "description", "required_image"}, "visual requirement")
         item_id = _require_string(raw["item_id"], "item_id")
         block_id = _require_string(raw["block_id"], "block_id")
@@ -213,8 +223,9 @@ def validate_close_session_request(payload: dict, known_item_ids: set[str]) -> C
     session_date = _require_string(payload["session_date"], "session_date")
     _require_iso_date(session_date, "session_date")
 
+    reviewed_items_raw = _require_list(payload["reviewed_items"], "reviewed_items")
     reviewed_items: list[ReviewedItemUpdate] = []
-    for raw in payload["reviewed_items"]:
+    for raw in reviewed_items_raw:
         _require_keys(raw, {"item_id", "phase", "result"}, "reviewed item")
         item_id = _require_string(raw["item_id"], "item_id")
         if item_id not in known_item_ids:

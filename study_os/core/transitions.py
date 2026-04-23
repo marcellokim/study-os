@@ -64,6 +64,9 @@ def apply_review_update(record: MasteryRecord, update: ReviewedItemUpdate, revie
     elif update.result == Result.PARTIAL.value:
         new_status = record.status if record.status == StudyStatus.R0.value else _regress(record.status, strong=False)
         consecutive_successes = 0
+    elif update.result == Result.UNCERTAIN.value:
+        new_status = record.status
+        consecutive_successes = 0
     else:
         new_status = _regress(record.status, strong=strong_regression)
         consecutive_successes = 0

@@ -30,7 +30,12 @@ def build_parser() -> argparse.ArgumentParser:
     init_parser = subparsers.add_parser("init-course", help=COMMAND_HELP["init-course"])
     init_parser.add_argument("--request-file", required=True)
 
-    for name in ("start-day", "close-session", "start-final-recall", "status"):
+    start_day_parser = subparsers.add_parser("start-day", help=COMMAND_HELP["start-day"])
+    start_day_parser.add_argument("--course", required=True)
+    start_day_parser.add_argument("--day", required=True, type=int)
+    start_day_parser.add_argument("--today", required=True)
+
+    for name in ("close-session", "start-final-recall", "status"):
         subparsers.add_parser(name, help=COMMAND_HELP[name])
 
     return parser
@@ -49,9 +54,17 @@ def main(argv: list[str] | None = None) -> int:
     if parsed.command is None:
         parser.error("a command is required")
 
+    engine = StudyEngine(Path(parsed.workspace))
+
     if parsed.command == "init-course":
-        engine = StudyEngine(Path(parsed.workspace))
         receipt = engine.initialize_course(_load_request_file(parsed.request_file))
+        print(receipt.status)
+        for path in receipt.generated_files:
+            print(path)
+        return 0
+
+    if parsed.command == "start-day":
+        receipt = engine.start_day(parsed.course, day_index=parsed.day, today=parsed.today)
         print(receipt.status)
         for path in receipt.generated_files:
             print(path)

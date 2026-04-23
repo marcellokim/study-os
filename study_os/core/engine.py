@@ -4,11 +4,13 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
-from study_os.core.models import ExecutionReceipt, MasteryRecord
-from study_os.core.packets import build_master_plan
+from study_os.core.models import Block, CourseConfig, ExecutionReceipt, Item, MasteryRecord, QueueEntry, VisualRequirement
+from study_os.core.packets import build_learning_packet, build_master_plan, build_recall_packet
 from study_os.core.paths import build_course_paths
 from study_os.core.storage import CourseStore
 from study_os.core.validation import validate_init_course_request
+
+_IMPORTANCE_ORDER = {"high": 0, "medium": 1, "low": 2}
 
 
 class StudyEngine:
@@ -55,6 +57,70 @@ class StudyEngine:
                 str(paths.master_plan_file),
                 str(paths.workspace_file),
             ],
+            warnings=[],
+        )
+
+    def start_day(self, course_slug: str, *, day_index: int, today: str) -> ExecutionReceipt:
+        paths = build_course_paths(self.workspace_root, course_slug)
+        paths.ensure_directories()
+        store = CourseStore(paths)
+
+        course = CourseConfig(**store.load_course())
+        blocks = [Block(**payload) for payload in store.load_blocks()]
+        items = [Item(**payload) for payload in store.load_items()]
+        visuals = [VisualRequirement(**payload) for payload in store.load_visual_requirements()]
+        review_queue = [QueueEntry(**payload) for payload in store.load_review_queue()]
+
+        items_by_block: dict[str, list[Item]] = {}
+        for item in items:
+            items_by_block.setdefault(item.block_id, []).append(item)
+        items_by_id = {item.item_id: item for item in items}
+
+        selected_blocks = sorted(
+            blocks,
+            key=lambda block: (
+                _IMPORTANCE_ORDER.get(block.importance, len(_IMPORTANCE_ORDER)),
+                block.block_name,
+                block.block_id,
+            ),
+        )[:2]
+        due_review_entries = [
+            entry for entry in review_queue if entry.next_review_day is None or entry.next_review_day <= day_index
+        ]
+
+        selected_block_ids = {block.block_id for block in selected_blocks}
+        due_review_item_ids = {entry.item_id for entry in due_review_entries}
+        selected_visuals = [
+            visual
+            for visual in visuals
+            if visual.block_id in selected_block_ids or visual.item_id in due_review_item_ids
+        ]
+
+        learning_file = paths.daily_dir / f"day_{day_index:02d}_learning.md"
+        recall_file = paths.daily_dir / f"day_{day_index:02d}_recall.md"
+        learning_file.write_text(
+            build_learning_packet(course, day_index, selected_blocks, items_by_block, selected_visuals),
+            encoding="utf-8",
+        )
+        recall_file.write_text(
+            build_recall_packet(course, day_index, due_review_entries, items_by_id, selected_visuals),
+            encoding="utf-8",
+        )
+
+        updated_course = asdict(course)
+        updated_course["current_day"] = day_index
+        store.save_course(updated_course)
+
+        applied_items = list(dict.fromkeys(
+            [item.item_id for item in items if item.block_id in selected_block_ids]
+            + [entry.item_id for entry in due_review_entries]
+        ))
+
+        return ExecutionReceipt(
+            status="applied",
+            applied_items=applied_items,
+            held_items=[],
+            generated_files=[str(learning_file), str(recall_file)],
             warnings=[],
         )
 

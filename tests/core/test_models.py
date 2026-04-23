@@ -1,6 +1,6 @@
 import unittest
 
-from study_os.core.constants import ErrorCode, StudyStatus
+from study_os.core.constants import ErrorCode, RISK_ERROR_CODES, STATUS_ORDER, StudyStatus
 from study_os.core.models import CourseConfig, MasteryRecord, ReviewedItemUpdate
 
 
@@ -10,6 +10,12 @@ class ModelsTest(unittest.TestCase):
             [status.value for status in StudyStatus],
             ["NEW", "LEARNED", "R0", "R1", "R2", "FINAL", "MASTERED"],
         )
+
+    def test_shared_constants_are_immutable(self) -> None:
+        self.assertIsInstance(RISK_ERROR_CODES, frozenset)
+        self.assertEqual(RISK_ERROR_CODES, frozenset({"C2", "C3", "C6", "C8"}))
+        self.assertIsInstance(STATUS_ORDER, tuple)
+        self.assertEqual(STATUS_ORDER, ("NEW", "LEARNED", "R0", "R1", "R2", "FINAL", "MASTERED"))
 
     def test_reviewed_item_defaults_are_conservative(self) -> None:
         update = ReviewedItemUpdate(item_id="include_vs_extend", phase="review", result="wrong")

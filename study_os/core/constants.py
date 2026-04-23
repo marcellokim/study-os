@@ -45,10 +45,12 @@ class ErrorCode(str, Enum):
     C8 = "C8"
 
 
-RISK_ERROR_CODES = {
-    ErrorCode.C2.value,
-    ErrorCode.C3.value,
-    ErrorCode.C6.value,
-    ErrorCode.C8.value,
-}
-STATUS_ORDER = [status.value for status in StudyStatus]
+RISK_ERROR_CODES = frozenset(
+    {
+        ErrorCode.C2.value,
+        ErrorCode.C3.value,
+        ErrorCode.C6.value,
+        ErrorCode.C8.value,
+    }
+)
+STATUS_ORDER = tuple(status.value for status in StudyStatus)

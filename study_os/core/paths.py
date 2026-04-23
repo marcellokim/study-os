@@ -12,6 +12,11 @@ class CoursePaths:
     workspace_file: Path
     course_file: Path
     sources_dir: Path
+    syllabus_dir: Path
+    slides_dir: Path
+    transcripts_dir: Path
+    images_dir: Path
+    notes_dir: Path
     state_dir: Path
     manifests_dir: Path
     outputs_dir: Path
@@ -30,11 +35,11 @@ class CoursePaths:
     def ensure_directories(self) -> None:
         for path in (
             self.sources_dir,
-            self.sources_dir / "syllabus",
-            self.sources_dir / "slides",
-            self.sources_dir / "transcripts",
-            self.sources_dir / "images",
-            self.sources_dir / "notes",
+            self.syllabus_dir,
+            self.slides_dir,
+            self.transcripts_dir,
+            self.images_dir,
+            self.notes_dir,
             self.state_dir,
             self.manifests_dir,
             self.outputs_dir,
@@ -45,13 +50,19 @@ class CoursePaths:
 
 def build_course_paths(workspace_root: Path, course_slug: str) -> CoursePaths:
     course_root = workspace_root / "courses" / course_slug
+    sources_dir = course_root / "sources"
     return CoursePaths(
         workspace_root=workspace_root,
         course_slug=course_slug,
         course_root=course_root,
         workspace_file=workspace_root / "workspace.md",
         course_file=course_root / "course.yaml",
-        sources_dir=course_root / "sources",
+        sources_dir=sources_dir,
+        syllabus_dir=sources_dir / "syllabus",
+        slides_dir=sources_dir / "slides",
+        transcripts_dir=sources_dir / "transcripts",
+        images_dir=sources_dir / "images",
+        notes_dir=sources_dir / "notes",
         state_dir=course_root / "state",
         manifests_dir=course_root / "manifests",
         outputs_dir=course_root / "outputs",

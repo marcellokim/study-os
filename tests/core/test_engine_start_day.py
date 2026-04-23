@@ -88,7 +88,11 @@ class StartDayWorkflowTest(unittest.TestCase):
 
             receipt = engine.start_day("operating-systems-midterm", day_index=1, today="2026-04-23")
             self.assertEqual(receipt.status, "applied")
+            self.assertIn(str(paths.course_file), receipt.generated_files)
             self.assertTrue(paths.daily_dir.joinpath("day_01_learning.md").exists())
             self.assertTrue(paths.daily_dir.joinpath("day_01_recall.md").exists())
+            self.assertEqual(store.load_course()["current_day"], 1)
+            self.assertIn("2026-04-23", paths.daily_dir.joinpath("day_01_learning.md").read_text(encoding="utf-8"))
+            self.assertIn("2026-04-23", paths.daily_dir.joinpath("day_01_recall.md").read_text(encoding="utf-8"))
             self.assertIn("First action", paths.daily_dir.joinpath("day_01_learning.md").read_text(encoding="utf-8"))
             self.assertIn("Immediate recall", paths.daily_dir.joinpath("day_01_recall.md").read_text(encoding="utf-8"))

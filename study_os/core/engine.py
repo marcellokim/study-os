@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -61,6 +62,8 @@ class StudyEngine:
         )
 
     def start_day(self, course_slug: str, *, day_index: int, today: str) -> ExecutionReceipt:
+        date.fromisoformat(today)
+
         paths = build_course_paths(self.workspace_root, course_slug)
         paths.ensure_directories()
         store = CourseStore(paths)
@@ -99,11 +102,11 @@ class StudyEngine:
         learning_file = paths.daily_dir / f"day_{day_index:02d}_learning.md"
         recall_file = paths.daily_dir / f"day_{day_index:02d}_recall.md"
         learning_file.write_text(
-            build_learning_packet(course, day_index, selected_blocks, items_by_block, selected_visuals),
+            build_learning_packet(course, day_index, selected_blocks, items_by_block, selected_visuals, today=today),
             encoding="utf-8",
         )
         recall_file.write_text(
-            build_recall_packet(course, day_index, due_review_entries, items_by_id, selected_visuals),
+            build_recall_packet(course, day_index, due_review_entries, items_by_id, selected_visuals, today=today),
             encoding="utf-8",
         )
 
@@ -120,7 +123,7 @@ class StudyEngine:
             status="applied",
             applied_items=applied_items,
             held_items=[],
-            generated_files=[str(learning_file), str(recall_file)],
+            generated_files=[str(paths.course_file), str(learning_file), str(recall_file)],
             warnings=[],
         )
 

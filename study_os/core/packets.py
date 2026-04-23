@@ -64,6 +64,7 @@ def build_learning_packet(
     blocks: list[Block],
     items_by_block: dict[str, list[Item]],
     visuals: list[VisualRequirement],
+    today: str | None = None,
 ) -> str:
     sorted_blocks = sorted(blocks, key=_block_sort_key)
     sorted_visuals = sorted(visuals, key=_visual_sort_key)
@@ -74,8 +75,10 @@ def build_learning_packet(
     lines = [
         f"# Day {day_index:02d} Learning Packet — {course.course_name}",
         "",
-        "## First action",
     ]
+    if today is not None:
+        lines.extend([f"- Date: {today}", ""])
+    lines.append("## First action")
     if not sorted_blocks:
         lines.extend(
             [
@@ -131,14 +134,17 @@ def build_recall_packet(
     queue_entries: list[QueueEntry],
     items_by_id: dict[str, Item],
     visuals: list[VisualRequirement],
+    today: str | None = None,
 ) -> str:
     sorted_queue_entries = sorted(queue_entries, key=_queue_entry_sort_key)
     sorted_visuals = sorted(visuals, key=_visual_sort_key)
     lines = [
         f"# Day {day_index:02d} Recall Packet — {course.course_name}",
         "",
-        "## Immediate recall",
     ]
+    if today is not None:
+        lines.extend([f"- Date: {today}", ""])
+    lines.append("## Immediate recall")
     if not sorted_queue_entries:
         lines.append("- No due review items yet. Run same-day recall after finishing new learning.")
     for entry in sorted_queue_entries:

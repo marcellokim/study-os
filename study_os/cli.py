@@ -34,6 +34,17 @@ def _load_request_file(path: str) -> dict[str, Any]:
         raise ValidationError(f"request file is not valid JSON: {request_path}") from exc
 
 
+def _print_receipt(receipt: Any, *, include_close_session_holds: bool = False) -> None:
+    print(receipt.status)
+    if include_close_session_holds:
+        for warning in receipt.warnings:
+            print(f"warning: {warning}")
+        for item_id in receipt.held_items:
+            print(f"held-item: {item_id}")
+    for path in receipt.generated_files:
+        print(path)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="study_os")
     parser.add_argument("--workspace", default=".")
@@ -77,30 +88,22 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if parsed.command == "init-course":
             receipt = engine.initialize_course(_load_request_file(parsed.request_file))
-            print(receipt.status)
-            for path in receipt.generated_files:
-                print(path)
+            _print_receipt(receipt)
             return 0
 
         if parsed.command == "start-day":
             receipt = engine.start_day(parsed.course, day_index=parsed.day, today=parsed.today)
-            print(receipt.status)
-            for path in receipt.generated_files:
-                print(path)
+            _print_receipt(receipt)
             return 0
 
         if parsed.command == "close-session":
             receipt = engine.close_session(_load_request_file(parsed.request_file))
-            print(receipt.status)
-            for path in receipt.generated_files:
-                print(path)
+            _print_receipt(receipt, include_close_session_holds=True)
             return 0
 
         if parsed.command == "start-final-recall":
             receipt = engine.start_final_recall(parsed.course, today=parsed.today)
-            print(receipt.status)
-            for path in receipt.generated_files:
-                print(path)
+            _print_receipt(receipt)
             return 0
 
         if parsed.command == "status":

@@ -213,6 +213,143 @@ class CliSmokeTest(unittest.TestCase):
             self.assertIn(str(request_file), completed.stderr)
             self.assertNotIn('Traceback', completed.stderr)
 
+    def test_close_session_surfaces_held_visual_gated_promotions_in_stdout(self) -> None:
+        init_request = {
+            "course": {
+                "course_slug": "operating-systems-midterm",
+                "course_name": "Operating Systems Midterm",
+                "exam_date": "2026-05-20",
+                "timezone": "Asia/Seoul",
+            },
+            "blocks": [
+                {
+                    "block_id": "use_case_diagram",
+                    "block_name": "Use Case Diagram",
+                    "block_type": "compare-contrast",
+                    "importance": "high",
+                    "difficulty": "medium",
+                    "exam_relevance": "high",
+                    "needs_prereq": False,
+                    "needs_visuals": True,
+                }
+            ],
+            "items": [
+                {
+                    "item_id": "include_vs_extend",
+                    "block_id": "use_case_diagram",
+                    "prompt": "Explain include vs extend.",
+                    "answer_mode": "short-answer",
+                    "difficulty": "medium",
+                    "exam_relevance": "high",
+                    "needs_visuals": True,
+                }
+            ],
+            "visual_requirements": [
+                {
+                    "item_id": "include_vs_extend",
+                    "block_id": "use_case_diagram",
+                    "description": "Need the UML arrow direction diagram.",
+                    "required_image": "uml-use-case-arrow.png",
+                    "status": "missing",
+                }
+            ],
+        }
+
+        close_request = {
+            "course_slug": "operating-systems-midterm",
+            "session_date": "2026-04-23",
+            "day_index": 1,
+            "reviewed_items": [
+                {
+                    "item_id": "include_vs_extend",
+                    "phase": "review",
+                    "result": "correct",
+                    "confidence": "high",
+                    "note": "Verbal explanation was correct but the diagram is still missing.",
+                }
+            ],
+        }
+
+        with TemporaryDirectory() as tmp:
+            workspace = Path(tmp) / "workspace"
+            init_request_file = Path(tmp) / "init-request.json"
+            init_request_file.write_text(json.dumps(init_request), encoding="utf-8")
+
+            init_completed = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "study_os",
+                    "--workspace",
+                    str(workspace),
+                    "init-course",
+                    "--request-file",
+                    str(init_request_file),
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(init_completed.returncode, 0, init_completed.stderr)
+
+            mastery_file = workspace / "courses" / "operating-systems-midterm" / "state" / "mastery.json"
+            review_queue_file = workspace / "courses" / "operating-systems-midterm" / "state" / "review_queue.yaml"
+            session_history_file = workspace / "courses" / "operating-systems-midterm" / "state" / "session_history.jsonl"
+            mastery_file.write_text(
+                json.dumps(
+                    {
+                        "include_vs_extend": {
+                            "item_id": "include_vs_extend",
+                            "block_id": "use_case_diagram",
+                            "status": "R1",
+                            "last_result": "correct",
+                            "consecutive_successes": 1,
+                            "last_confidence": "medium",
+                            "last_review_date": None,
+                            "next_review_date": None,
+                            "next_review_day": None,
+                            "reason": "",
+                        }
+                    },
+                    indent=2,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            close_request_file = Path(tmp) / "close-request.json"
+            close_request_file.write_text(json.dumps(close_request), encoding="utf-8")
+
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "study_os",
+                    "--workspace",
+                    str(workspace),
+                    "close-session",
+                    "--request-file",
+                    str(close_request_file),
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertEqual(
+                completed.stdout.strip().splitlines(),
+                [
+                    "applied",
+                    "warning: Held promotion for include_vs_extend because required visual is still missing.",
+                    "held-item: include_vs_extend",
+                    str(mastery_file),
+                    str(review_queue_file),
+                    str(session_history_file),
+                ],
+            )
+            self.assertEqual(completed.stderr, "")
+
     def test_start_day_command_writes_daily_packets_and_reports_success(self) -> None:
         request = {
             "course": {

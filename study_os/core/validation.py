@@ -23,6 +23,7 @@ class ValidationError(ValueError):
 _RESULT_VALUES = {result.value for result in Result}
 _CONFIDENCE_VALUES = {level.value for level in Confidence}
 _ERROR_CODE_VALUES = {code.value for code in ErrorCode}
+_VISUAL_STATUS_VALUES = {"available", "missing"}
 _SLUG_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 
 
@@ -56,6 +57,14 @@ def _require_optional_string(value: object, label: str, default: str = "") -> st
     if value is None:
         return default
     return _require_string(value, label)
+
+
+def _require_allowed_string(value: object, label: str, allowed_values: set[str]) -> str:
+    text = _require_string(value, label)
+    if text not in allowed_values:
+        ordered_values = ", ".join(sorted(allowed_values))
+        raise ValidationError(f"{label} must be one of: {ordered_values}")
+    return text
 
 
 def validate_iso_date_text(value: object, label: str) -> str:
@@ -218,7 +227,7 @@ def validate_init_course_request(payload: dict) -> InitCourseRequest:
         block_id = _require_string(raw["block_id"], "block_id")
         description = _require_string(raw["description"], "description")
         required_image = _require_string(raw["required_image"], "required_image")
-        status = _require_optional_string(raw.get("status"), "status", default="missing")
+        status = _require_allowed_string(raw.get("status", "missing"), "status", _VISUAL_STATUS_VALUES)
         if item_id not in item_ids:
             raise ValidationError(f"unknown visual item_id: {item_id}")
         if block_id not in block_ids:

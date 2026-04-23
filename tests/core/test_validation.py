@@ -275,6 +275,24 @@ class ValidationTest(unittest.TestCase):
         ):
             validate_init_course_request(payload)
 
+    def test_init_request_rejects_unknown_visual_requirement_status(self) -> None:
+        payload = self._valid_init_payload()
+        payload["visual_requirements"] = [
+            {
+                "item_id": "include_vs_extend",
+                "block_id": "use_case_diagram",
+                "description": "Need the use-case relationship diagram.",
+                "required_image": "diagram.png",
+                "status": "ready",
+            }
+        ]
+
+        with self.assertRaisesRegex(
+            ValidationError,
+            "status must be one of: available, missing",
+        ):
+            validate_init_course_request(payload)
+
     def test_close_session_rejects_unknown_result(self) -> None:
         payload = self._valid_close_payload()
         payload["reviewed_items"][0]["result"] = "great"

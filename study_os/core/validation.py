@@ -217,6 +217,14 @@ def validate_init_course_request(payload: dict) -> InitCourseRequest:
 
 
 def validate_close_session_request(payload: dict, known_item_ids: set[str]) -> CloseSessionRequest:
+    request = validate_close_session_request_shape(payload)
+    for reviewed in request.reviewed_items:
+        if reviewed.item_id not in known_item_ids:
+            raise ValidationError(f"unknown item_id: {reviewed.item_id}")
+    return request
+
+
+def validate_close_session_request_shape(payload: dict) -> CloseSessionRequest:
     _require_keys(payload, {"course_slug", "session_date", "reviewed_items"}, "close session request")
     course_slug = _require_string(payload["course_slug"], "course_slug")
     _validate_slug(course_slug, "course_slug")
@@ -228,8 +236,6 @@ def validate_close_session_request(payload: dict, known_item_ids: set[str]) -> C
     for raw in reviewed_items_raw:
         _require_keys(raw, {"item_id", "phase", "result"}, "reviewed item")
         item_id = _require_string(raw["item_id"], "item_id")
-        if item_id not in known_item_ids:
-            raise ValidationError(f"unknown item_id: {item_id}")
         phase = _require_string(raw["phase"], "phase")
         if phase not in {"learning", "review"}:
             raise ValidationError(f"unsupported phase: {phase}")

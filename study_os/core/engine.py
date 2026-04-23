@@ -11,7 +11,7 @@ from study_os.core.paths import build_course_paths
 from study_os.core.scheduler import build_queue_entry
 from study_os.core.storage import CourseStore
 from study_os.core.transitions import apply_review_update
-from study_os.core.validation import validate_close_session_request, validate_init_course_request
+from study_os.core.validation import ValidationError, validate_close_session_request, validate_close_session_request_shape, validate_init_course_request
 
 _IMPORTANCE_ORDER = {"high": 0, "medium": 1, "low": 2}
 _PRIORITY_ORDER = {"urgent": 0, "high": 1, "medium": 2, "low": 3}
@@ -131,15 +131,10 @@ class StudyEngine:
         )
 
     def close_session(self, payload: dict[str, Any]) -> ExecutionReceipt:
-        if not isinstance(payload, dict):
-            validate_close_session_request(payload, set())
-
-        course_slug = payload.get("course_slug")
-        if not isinstance(course_slug, str) or not course_slug or any(ch.isspace() for ch in course_slug):
-            validate_close_session_request(payload, set())
-
-        paths = build_course_paths(self.workspace_root, course_slug)
-        paths.ensure_directories()
+        request_shape = validate_close_session_request_shape(payload)
+        paths = build_course_paths(self.workspace_root, request_shape.course_slug)
+        if not paths.course_file.exists():
+            raise ValidationError(f"unknown course_slug: {request_shape.course_slug}")
         store = CourseStore(paths)
 
         items = [Item(**row) for row in store.load_items()]
@@ -161,6 +156,7 @@ class StudyEngine:
 
         applied_items: list[str] = []
         warnings: list[str] = []
+        wrote_error_row = False
         for reviewed in request.reviewed_items:
             item = item_by_id[reviewed.item_id]
             current = MasteryRecord(
@@ -186,6 +182,7 @@ class StudyEngine:
                     }
                 )
                 recent_error_codes.setdefault(reviewed.item_id, []).append(error_code)
+                wrote_error_row = True
 
         current_day = request.day_index if request.day_index is not None else course.current_day
         rebuilt_queue: list[dict[str, Any]] = []
@@ -232,16 +229,19 @@ class StudyEngine:
             }
         )
 
+        generated_files = [
+            str(paths.mastery_file),
+            str(paths.review_queue_file),
+            str(paths.session_history_file),
+        ]
+        if wrote_error_row:
+            generated_files.append(str(paths.error_log_file))
+
         return ExecutionReceipt(
             status="applied",
             applied_items=applied_items,
             held_items=[],
-            generated_files=[
-                str(paths.mastery_file),
-                str(paths.review_queue_file),
-                str(paths.error_log_file),
-                str(paths.session_history_file),
-            ],
+            generated_files=generated_files,
             warnings=warnings,
         )
 

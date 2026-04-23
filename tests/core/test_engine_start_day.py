@@ -109,6 +109,37 @@ class StartDayWorkflowTest(unittest.TestCase):
             self.assertIn("First action", paths.daily_dir.joinpath("day_01_learning.md").read_text(encoding="utf-8"))
             self.assertIn("Immediate recall", paths.daily_dir.joinpath("day_01_recall.md").read_text(encoding="utf-8"))
 
+    def test_failed_learning_item_reappears_in_next_day_recall(self) -> None:
+        with TemporaryDirectory() as tmp:
+            engine = StudyEngine(Path(tmp))
+            engine.initialize_course(self._course_payload(visual_requirements=[]))
+
+            day_one = engine.start_day("operating-systems-midterm", day_index=1, today="2026-04-23")
+            self.assertEqual(day_one.applied_items, ["include_vs_extend"])
+
+            engine.close_session(
+                {
+                    "course_slug": "operating-systems-midterm",
+                    "session_date": "2026-04-23",
+                    "day_index": 1,
+                    "reviewed_items": [
+                        {
+                            "item_id": "include_vs_extend",
+                            "phase": "learning",
+                            "result": "wrong",
+                            "confidence": "medium",
+                            "note": "Still mixing up the terms.",
+                        }
+                    ],
+                }
+            )
+
+            day_two = engine.start_day("operating-systems-midterm", day_index=2, today="2026-04-24")
+
+            recall_file = Path(tmp) / "courses" / "operating-systems-midterm" / "outputs" / "daily" / "day_02_recall.md"
+            self.assertIn("include_vs_extend", day_two.applied_items)
+            self.assertIn("Explain include vs extend.", recall_file.read_text(encoding="utf-8"))
+
     def test_start_day_advances_new_block_selection_across_days(self) -> None:
         with TemporaryDirectory() as tmp:
             engine = StudyEngine(Path(tmp))

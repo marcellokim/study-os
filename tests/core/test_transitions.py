@@ -5,6 +5,19 @@ from study_os.core.transitions import apply_review_update
 
 
 class TransitionTest(unittest.TestCase):
+    def test_learning_failure_routes_to_r0_for_follow_up_review(self) -> None:
+        record = MasteryRecord(item_id="include_vs_extend", block_id="use_case_diagram")
+        update = ReviewedItemUpdate(
+            item_id="include_vs_extend",
+            phase="learning",
+            result="wrong",
+            confidence="medium",
+        )
+
+        new_record = apply_review_update(record, update, "2026-04-23")
+        self.assertEqual(new_record.status, "R0")
+        self.assertEqual(new_record.last_review_date, "2026-04-23")
+
     def test_learning_success_enters_same_day_recall(self) -> None:
         record = MasteryRecord(item_id="include_vs_extend", block_id="use_case_diagram")
         update = ReviewedItemUpdate(

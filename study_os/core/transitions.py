@@ -44,7 +44,7 @@ def apply_review_update(record: MasteryRecord, update: ReviewedItemUpdate, revie
     strong_regression = update.confidence == Confidence.HIGH.value or (update.error_code in RISK_ERROR_CODES)
 
     if update.phase == "learning":
-        new_status = StudyStatus.R0.value if update.result != Result.WRONG.value else StudyStatus.NEW.value
+        new_status = StudyStatus.R0.value
         return replace(
             record,
             status=new_status,

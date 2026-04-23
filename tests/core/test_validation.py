@@ -258,6 +258,15 @@ class ValidationTest(unittest.TestCase):
         with self.assertRaisesRegex(ValidationError, "reviewed item must be an object"):
             validate_close_session_request(payload, {"include_vs_extend"})
 
+    def test_close_session_rejects_duplicate_reviewed_item_ids(self) -> None:
+        payload = self._valid_close_payload()
+        payload["reviewed_items"].append(
+            {"item_id": "include_vs_extend", "phase": "review", "result": "correct"}
+        )
+
+        with self.assertRaisesRegex(ValidationError, "duplicate reviewed_items item_id: include_vs_extend"):
+            validate_close_session_request(payload, {"include_vs_extend"})
+
     def test_close_session_rejects_non_hashable_confidence_and_error_code(self) -> None:
         confidence_payload = self._valid_close_payload()
         confidence_payload["reviewed_items"][0]["confidence"] = ["high"]

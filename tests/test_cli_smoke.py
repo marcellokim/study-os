@@ -253,6 +253,120 @@ class CliSmokeTest(unittest.TestCase):
             self.assertNotIn("Traceback", completed.stderr)
             self.assertFalse((workspace / "courses" / "missing-course").exists())
 
+    def test_start_day_invalid_today_fails_cleanly_without_traceback(self) -> None:
+        with TemporaryDirectory() as tmp:
+            workspace = Path(tmp) / "workspace"
+
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "study_os",
+                    "--workspace",
+                    str(workspace),
+                    "start-day",
+                    "--course",
+                    "operating-systems-midterm",
+                    "--day",
+                    "1",
+                    "--today",
+                    "2026/04/23",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(completed.returncode, 2)
+            self.assertEqual(completed.stdout, "")
+            self.assertIn("error: today must be YYYY-MM-DD", completed.stderr)
+            self.assertNotIn("Traceback", completed.stderr)
+
+    def test_start_day_zero_day_fails_cleanly(self) -> None:
+        with TemporaryDirectory() as tmp:
+            workspace = Path(tmp) / "workspace"
+
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "study_os",
+                    "--workspace",
+                    str(workspace),
+                    "start-day",
+                    "--course",
+                    "operating-systems-midterm",
+                    "--day",
+                    "0",
+                    "--today",
+                    "2026-04-23",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(completed.returncode, 2)
+            self.assertEqual(completed.stdout, "")
+            self.assertIn("error: day_index must be a positive integer", completed.stderr)
+            self.assertNotIn("Traceback", completed.stderr)
+
+    def test_start_day_negative_day_fails_cleanly(self) -> None:
+        with TemporaryDirectory() as tmp:
+            workspace = Path(tmp) / "workspace"
+
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "study_os",
+                    "--workspace",
+                    str(workspace),
+                    "start-day",
+                    "--course",
+                    "operating-systems-midterm",
+                    "--day",
+                    "-3",
+                    "--today",
+                    "2026-04-23",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(completed.returncode, 2)
+            self.assertEqual(completed.stdout, "")
+            self.assertIn("error: day_index must be a positive integer", completed.stderr)
+            self.assertNotIn("Traceback", completed.stderr)
+
+    def test_start_final_recall_invalid_today_fails_cleanly_without_traceback(self) -> None:
+        with TemporaryDirectory() as tmp:
+            workspace = Path(tmp) / "workspace"
+
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "study_os",
+                    "--workspace",
+                    str(workspace),
+                    "start-final-recall",
+                    "--course",
+                    "operating-systems-midterm",
+                    "--today",
+                    "2026/04/23",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(completed.returncode, 2)
+            self.assertEqual(completed.stdout, "")
+            self.assertIn("error: today must be YYYY-MM-DD", completed.stderr)
+            self.assertNotIn("Traceback", completed.stderr)
+
     def test_workspace_without_subcommand_returns_non_zero(self) -> None:
         with TemporaryDirectory() as tmp:
             completed = subprocess.run(

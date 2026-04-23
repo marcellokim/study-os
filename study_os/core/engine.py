@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import asdict
-from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -11,7 +10,14 @@ from study_os.core.paths import build_course_paths
 from study_os.core.scheduler import build_queue_entry
 from study_os.core.storage import CourseStore
 from study_os.core.transitions import apply_review_update
-from study_os.core.validation import ValidationError, validate_close_session_request, validate_close_session_request_shape, validate_init_course_request
+from study_os.core.validation import (
+    ValidationError,
+    validate_close_session_request,
+    validate_close_session_request_shape,
+    validate_init_course_request,
+    validate_iso_date_text,
+    validate_positive_day_index,
+)
 
 _IMPORTANCE_ORDER = {"high": 0, "medium": 1, "low": 2}
 _PRIORITY_ORDER = {"urgent": 0, "high": 1, "medium": 2, "low": 3}
@@ -70,7 +76,8 @@ class StudyEngine:
         )
 
     def start_day(self, course_slug: str, *, day_index: int, today: str) -> ExecutionReceipt:
-        date.fromisoformat(today)
+        validate_positive_day_index(day_index)
+        validate_iso_date_text(today, "today")
 
         paths = build_course_paths(self.workspace_root, course_slug)
         if not paths.course_file.exists():
@@ -255,7 +262,7 @@ class StudyEngine:
         )
 
     def start_final_recall(self, course_slug: str, *, today: str) -> ExecutionReceipt:
-        date.fromisoformat(today)
+        validate_iso_date_text(today, "today")
 
         paths = build_course_paths(self.workspace_root, course_slug)
         if not paths.course_file.exists():

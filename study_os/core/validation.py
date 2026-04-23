@@ -56,12 +56,23 @@ def _require_optional_string(value: object, label: str, default: str = "") -> st
     return _require_string(value, label)
 
 
-def _require_iso_date(value: object, label: str) -> None:
+def validate_iso_date_text(value: object, label: str) -> str:
     text = _require_string(value, label)
     try:
         date.fromisoformat(text)
     except ValueError as exc:
         raise ValidationError(f"{label} must be YYYY-MM-DD") from exc
+    return text
+
+
+def _require_iso_date(value: object, label: str) -> None:
+    validate_iso_date_text(value, label)
+
+
+def validate_positive_day_index(value: object, label: str = "day_index") -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise ValidationError(f"{label} must be a positive integer")
+    return value
 
 
 def _validate_slug(value: object, label: str) -> None:
@@ -241,9 +252,14 @@ def validate_close_session_request_shape(payload: dict) -> CloseSessionRequest:
 
     reviewed_items_raw = _require_list(payload["reviewed_items"], "reviewed_items")
     reviewed_items: list[ReviewedItemUpdate] = []
+    seen_item_ids: set[str] = set()
     for raw in reviewed_items_raw:
         _require_keys(raw, {"item_id", "phase", "result"}, "reviewed item")
         item_id = _require_string(raw["item_id"], "item_id")
+        if item_id in seen_item_ids:
+            raise ValidationError(f"duplicate reviewed_items item_id: {item_id}")
+        seen_item_ids.add(item_id)
+
         phase = _require_string(raw["phase"], "phase")
         if phase not in {"learning", "review"}:
             raise ValidationError(f"unsupported phase: {phase}")
@@ -275,10 +291,11 @@ def validate_close_session_request_shape(payload: dict) -> CloseSessionRequest:
         )
 
     day_index = payload.get("day_index")
-    if day_index is not None and (
-        isinstance(day_index, bool) or not isinstance(day_index, int) or day_index < 1
-    ):
-        raise ValidationError("day_index must be a positive integer when provided")
+    if day_index is not None:
+        try:
+            day_index = validate_positive_day_index(day_index)
+        except ValidationError as exc:
+            raise ValidationError("day_index must be a positive integer when provided") from exc
 
     return CloseSessionRequest(
         course_slug=course_slug,

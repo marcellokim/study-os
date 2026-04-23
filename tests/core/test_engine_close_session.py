@@ -7,9 +7,22 @@ from study_os.core.engine import StudyEngine
 from study_os.core.models import MasteryRecord
 from study_os.core.paths import build_course_paths
 from study_os.core.storage import CourseStore
+from study_os.core.validation import ValidationError
 
 
 class CloseSessionWorkflowTest(unittest.TestCase):
+    def test_close_session_validates_before_accessing_course_slug(self) -> None:
+        with TemporaryDirectory() as tmp:
+            engine = StudyEngine(Path(tmp))
+
+            with self.assertRaises(ValidationError):
+                engine.close_session(
+                    {
+                        "session_date": "2026-04-23",
+                        "reviewed_items": [],
+                    }
+                )
+
     def test_close_session_updates_mastery_queue_and_logs_errors(self) -> None:
         with TemporaryDirectory() as tmp:
             engine = StudyEngine(Path(tmp))

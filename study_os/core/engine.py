@@ -131,7 +131,13 @@ class StudyEngine:
         )
 
     def close_session(self, payload: dict[str, Any]) -> ExecutionReceipt:
-        course_slug = str(payload["course_slug"])
+        if not isinstance(payload, dict):
+            validate_close_session_request(payload, set())
+
+        course_slug = payload.get("course_slug")
+        if not isinstance(course_slug, str) or not course_slug or any(ch.isspace() for ch in course_slug):
+            validate_close_session_request(payload, set())
+
         paths = build_course_paths(self.workspace_root, course_slug)
         paths.ensure_directories()
         store = CourseStore(paths)

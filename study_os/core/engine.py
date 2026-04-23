@@ -1,9 +1,11 @@
 from __future__ import annotations
 
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from pathlib import Path
+import shutil
 from typing import Any
 
+from study_os.core.constants import STATUS_ORDER
 from study_os.core.models import Block, CourseConfig, ExecutionReceipt, Item, MasteryRecord, QueueEntry, VisualRequirement
 from study_os.core.packets import build_final_recall_pack, build_learning_packet, build_master_plan, build_recall_packet
 from study_os.core.paths import build_course_paths
@@ -14,6 +16,7 @@ from study_os.core.validation import (
     ValidationError,
     validate_close_session_request,
     validate_close_session_request_shape,
+    validate_course_slug_text,
     validate_init_course_request,
     validate_iso_date_text,
     validate_positive_day_index,
@@ -31,6 +34,8 @@ class StudyEngine:
     def initialize_course(self, payload: dict[str, Any]) -> ExecutionReceipt:
         request = validate_init_course_request(payload)
         paths = build_course_paths(self.workspace_root, request.course.course_slug)
+        if paths.outputs_dir.exists():
+            shutil.rmtree(paths.outputs_dir)
         paths.ensure_directories()
         store = CourseStore(paths)
 
@@ -78,6 +83,7 @@ class StudyEngine:
     def start_day(self, course_slug: str, *, day_index: int, today: str) -> ExecutionReceipt:
         validate_positive_day_index(day_index)
         validate_iso_date_text(today, "today")
+        validate_course_slug_text(course_slug)
 
         paths = build_course_paths(self.workspace_root, course_slug)
         if not paths.course_file.exists():
@@ -175,6 +181,10 @@ class StudyEngine:
         wrote_error_row = False
         for reviewed in request.reviewed_items:
             item = item_by_id[reviewed.item_id]
+            unresolved_visual = item.needs_visuals and any(
+                visual.item_id == reviewed.item_id and visual.status != "available"
+                for visual in visuals
+            )
             current = MasteryRecord(
                 **mastery.get(
                     reviewed.item_id,
@@ -182,6 +192,8 @@ class StudyEngine:
                 )
             )
             updated = apply_review_update(current, reviewed, request.session_date)
+            if self._should_hold_visual_gated_promotion(current, updated, reviewed.phase, unresolved_visual):
+                updated = replace(updated, status=current.status)
             mastery[reviewed.item_id] = asdict(updated)
             applied_items.append(reviewed.item_id)
 
@@ -263,6 +275,7 @@ class StudyEngine:
 
     def start_final_recall(self, course_slug: str, *, today: str) -> ExecutionReceipt:
         validate_iso_date_text(today, "today")
+        validate_course_slug_text(course_slug)
 
         paths = build_course_paths(self.workspace_root, course_slug)
         if not paths.course_file.exists():
@@ -300,6 +313,7 @@ class StudyEngine:
         )
 
     def status(self, course_slug: str) -> str:
+        validate_course_slug_text(course_slug)
         paths = build_course_paths(self.workspace_root, course_slug)
         if not paths.course_file.exists():
             raise ValidationError(f"unknown course_slug: {course_slug}")
@@ -350,3 +364,14 @@ class StudyEngine:
             lines.append("- None")
 
         (self.workspace_root / "workspace.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    def _should_hold_visual_gated_promotion(
+        self,
+        current: MasteryRecord,
+        updated: MasteryRecord,
+        phase: str,
+        unresolved_visual: bool,
+    ) -> bool:
+        if phase != "review" or not unresolved_visual:
+            return False
+        return STATUS_ORDER.index(updated.status) > STATUS_ORDER.index(current.status)

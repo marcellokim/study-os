@@ -80,3 +80,28 @@ class InitCourseWorkflowTest(unittest.TestCase):
 
             self.assertEqual(store.load_errors(), [])
             self.assertEqual(store.load_session_history(), [])
+
+    def test_initialize_course_reinit_clears_derived_outputs_and_preserves_sources(self) -> None:
+        with TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            engine = StudyEngine(workspace)
+            engine.initialize_course(self._course_payload())
+
+            paths = build_course_paths(workspace, "operating-systems-midterm")
+            source_file = paths.notes_dir / "lecture-annotated.md"
+            source_file.parent.mkdir(parents=True, exist_ok=True)
+            source_file.write_text("keep me", encoding="utf-8")
+
+            stale_learning = paths.daily_dir / "day_01_learning.md"
+            stale_recall = paths.daily_dir / "day_01_recall.md"
+            stale_learning.write_text("stale learning", encoding="utf-8")
+            stale_recall.write_text("stale recall", encoding="utf-8")
+            paths.final_recall_file.write_text("stale final recall", encoding="utf-8")
+
+            engine.initialize_course(self._course_payload())
+
+            self.assertFalse(stale_learning.exists())
+            self.assertFalse(stale_recall.exists())
+            self.assertFalse(paths.final_recall_file.exists())
+            self.assertTrue(source_file.exists())
+            self.assertEqual(source_file.read_text(encoding="utf-8"), "keep me")

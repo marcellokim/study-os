@@ -49,6 +49,10 @@ class CoursePaths:
 
 
 def build_course_paths(workspace_root: Path, course_slug: str) -> CoursePaths:
+    slug_parts = course_slug.replace("\\", "/").split("/")
+    if len(slug_parts) != 1 or any(part in {"", ".", ".."} for part in slug_parts):
+        raise ValueError("course_slug must be a simple slug without path separators or dot segments")
+
     courses_root = workspace_root / "courses"
     course_root = courses_root / course_slug
     resolved_courses_root = courses_root.resolve()

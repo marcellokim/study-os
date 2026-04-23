@@ -77,10 +77,15 @@ def validate_positive_day_index(value: object, label: str = "day_index") -> int:
     return value
 
 
-def _validate_slug(value: object, label: str) -> None:
+def _validate_slug(value: object, label: str) -> str:
     text = _require_string(value, label)
     if not _SLUG_PATTERN.fullmatch(text):
         raise ValidationError(f"{label} must be a lowercase slug using only letters, digits, _ or -")
+    return text
+
+
+def validate_course_slug_text(value: object, label: str = "course_slug") -> str:
+    return _validate_slug(value, label)
 
 
 def validate_init_course_request(payload: dict) -> InitCourseRequest:
@@ -88,8 +93,7 @@ def validate_init_course_request(payload: dict) -> InitCourseRequest:
 
     course_raw = payload["course"]
     _require_keys(course_raw, {"course_slug", "course_name", "exam_date", "timezone"}, "course")
-    course_slug = _require_string(course_raw["course_slug"], "course_slug")
-    _validate_slug(course_slug, "course_slug")
+    course_slug = validate_course_slug_text(course_raw["course_slug"], "course_slug")
     course_name = _require_string(course_raw["course_name"], "course_name")
     exam_date = _require_string(course_raw["exam_date"], "exam_date")
     _require_iso_date(exam_date, "exam_date")
@@ -247,8 +251,7 @@ def validate_close_session_request(payload: dict, known_item_ids: set[str]) -> C
 
 def validate_close_session_request_shape(payload: dict) -> CloseSessionRequest:
     _require_keys(payload, {"course_slug", "session_date", "reviewed_items"}, "close session request")
-    course_slug = _require_string(payload["course_slug"], "course_slug")
-    _validate_slug(course_slug, "course_slug")
+    course_slug = validate_course_slug_text(payload["course_slug"], "course_slug")
     session_date = _require_string(payload["session_date"], "session_date")
     _require_iso_date(session_date, "session_date")
 

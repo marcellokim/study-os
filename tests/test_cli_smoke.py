@@ -158,6 +158,61 @@ class CliSmokeTest(unittest.TestCase):
             self.assertIn(str(request_file), completed.stderr)
             self.assertNotIn('Traceback', completed.stderr)
 
+    def test_close_session_with_missing_request_file_fails_cleanly_without_traceback(self) -> None:
+        with TemporaryDirectory() as tmp:
+            workspace = Path(tmp) / 'workspace'
+            missing_request = Path(tmp) / 'missing.json'
+
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    '-m',
+                    'study_os',
+                    '--workspace',
+                    str(workspace),
+                    'close-session',
+                    '--request-file',
+                    str(missing_request),
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(completed.returncode, 2)
+            self.assertEqual(completed.stdout, '')
+            self.assertIn('error: request file not found:', completed.stderr)
+            self.assertIn(str(missing_request), completed.stderr)
+            self.assertNotIn('Traceback', completed.stderr)
+
+    def test_close_session_with_malformed_request_file_fails_cleanly_without_traceback(self) -> None:
+        with TemporaryDirectory() as tmp:
+            workspace = Path(tmp) / 'workspace'
+            request_file = Path(tmp) / 'request.json'
+            request_file.write_text('{"course_slug": ', encoding='utf-8')
+
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    '-m',
+                    'study_os',
+                    '--workspace',
+                    str(workspace),
+                    'close-session',
+                    '--request-file',
+                    str(request_file),
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(completed.returncode, 2)
+            self.assertEqual(completed.stdout, '')
+            self.assertIn('error: request file is not valid JSON:', completed.stderr)
+            self.assertIn(str(request_file), completed.stderr)
+            self.assertNotIn('Traceback', completed.stderr)
+
     def test_start_day_command_writes_daily_packets_and_reports_success(self) -> None:
         request = {
             "course": {
@@ -421,6 +476,44 @@ class CliSmokeTest(unittest.TestCase):
             self.assertEqual(completed.stdout, "")
             self.assertIn("error: today must be YYYY-MM-DD", completed.stderr)
             self.assertNotIn("Traceback", completed.stderr)
+
+    def test_public_course_commands_reject_malformed_course_selectors(self) -> None:
+        command_cases = (
+            ("start-day", ["--day", "1", "--today", "2026-04-23"]),
+            ("start-final-recall", ["--today", "2026-04-23"]),
+            ("status", []),
+        )
+
+        with TemporaryDirectory() as tmp:
+            workspace = Path(tmp) / "workspace"
+
+            for course_selector in (".", "a/..", "nested/path"):
+                for command, extra_args in command_cases:
+                    with self.subTest(command=command, course=course_selector):
+                        completed = subprocess.run(
+                            [
+                                sys.executable,
+                                "-m",
+                                "study_os",
+                                "--workspace",
+                                str(workspace),
+                                command,
+                                "--course",
+                                course_selector,
+                                *extra_args,
+                            ],
+                            capture_output=True,
+                            text=True,
+                            check=False,
+                        )
+
+                        self.assertEqual(completed.returncode, 2)
+                        self.assertEqual(completed.stdout, "")
+                        self.assertIn(
+                            "error: course_slug must be a lowercase slug using only letters, digits, _ or -",
+                            completed.stderr,
+                        )
+                        self.assertNotIn("Traceback", completed.stderr)
 
     def test_workspace_without_subcommand_returns_non_zero(self) -> None:
         with TemporaryDirectory() as tmp:

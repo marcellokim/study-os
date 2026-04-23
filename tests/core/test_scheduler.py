@@ -47,7 +47,7 @@ class SchedulerTest(unittest.TestCase):
         self.assertEqual(entry.next_review_day, 1)
         self.assertEqual(entry.priority, "urgent")
 
-    def test_high_risk_item_gets_escalated_priority(self) -> None:
+    def test_high_risk_item_gets_exact_urgent_schedule_and_reason(self) -> None:
         record = MasteryRecord(
             item_id="include_vs_extend",
             block_id="use_case_diagram",
@@ -65,8 +65,39 @@ class SchedulerTest(unittest.TestCase):
             recent_error_codes=["C2", "C8"],
             unresolved_visual=True,
         )
-        self.assertIn(entry.priority, {"high", "urgent"})
-        self.assertIn("visual", entry.reason)
+        self.assertEqual(entry.priority, "urgent")
+        self.assertEqual(entry.next_review_day, 3)
+        self.assertEqual(entry.next_review_date, "2026-04-23")
+        self.assertEqual(
+            entry.reason,
+            "important block, last result wrong, overconfidence, risk error code, visual pending, exam near",
+        )
+
+    def test_high_risk_final_item_is_pulled_forward_to_today(self) -> None:
+        record = MasteryRecord(
+            item_id="include_vs_extend",
+            block_id="use_case_diagram",
+            status="FINAL",
+            last_result="wrong",
+            last_confidence="high",
+        )
+        entry = build_queue_entry(
+            record,
+            self.item,
+            self.block,
+            "2026-05-20",
+            "2026-04-23",
+            current_day=7,
+            recent_error_codes=["C2"],
+            unresolved_visual=True,
+        )
+        self.assertEqual(entry.priority, "urgent")
+        self.assertEqual(entry.next_review_day, 7)
+        self.assertEqual(entry.next_review_date, "2026-04-23")
+        self.assertEqual(
+            entry.reason,
+            "important block, last result wrong, overconfidence, risk error code, visual pending",
+        )
 
     def test_mastered_item_is_not_queued(self) -> None:
         record = MasteryRecord(item_id="include_vs_extend", block_id="use_case_diagram", status="MASTERED")

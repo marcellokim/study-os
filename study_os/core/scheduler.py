@@ -57,8 +57,15 @@ def build_queue_entry(
         reasons.append("exam near")
 
     if record.status == StudyStatus.FINAL.value:
-        next_review_date = max(today_day, exam_day - timedelta(days=1))
-        next_review_day = current_day + max((next_review_date - today_day).days, 0)
+        default_gap = max((max(today_day, exam_day - timedelta(days=1)) - today_day).days, 0)
+        if risk_score >= 4:
+            gap = 0
+        elif risk_score >= 2:
+            gap = min(default_gap, 1)
+        else:
+            gap = default_gap
+        next_review_date = today_day + timedelta(days=gap)
+        next_review_day = current_day + gap
     else:
         base_gap = BASE_GAPS[record.status]
         gap = max(0, base_gap - min(risk_score, base_gap))

@@ -83,8 +83,8 @@ class FinalRecallWorkflowTest(unittest.TestCase):
 
             self.assertEqual(receipt.status, "applied")
             self.assertTrue(paths.final_recall_file.exists())
-            self.assertIn("Final Recall Pack", pack_text)
-            self.assertIn("- Generated on: 2026-04-23", pack_text)
+            self.assertIn("최종 회상 팩", pack_text)
+            self.assertIn("- 생성일: 2026-04-23", pack_text)
             self.assertIn("include_vs_extend", summary)
             self.assertIn("FINAL", summary)
 
@@ -168,5 +168,5 @@ class FinalRecallWorkflowTest(unittest.TestCase):
 
             pack_text = paths.final_recall_file.read_text(encoding="utf-8")
 
-            self.assertNotIn("## Required visuals", pack_text)
+            self.assertNotIn("## 필요한 시각자료", pack_text)
             self.assertNotIn("uml-use-case-arrow.png", pack_text)

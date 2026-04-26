@@ -24,6 +24,8 @@ class Block:
     exam_relevance: str
     needs_prereq: bool
     needs_visuals: bool
+    study_order: int | None = None
+    study_goal: str = ""
 
 
 @dataclass(frozen=True)
@@ -35,6 +37,11 @@ class Item:
     difficulty: str
     exam_relevance: str
     needs_visuals: bool
+    learning_note: str = ""
+    answer_key: str = ""
+    rubric: str = ""
+    common_mistakes: list[str] = field(default_factory=list)
+    source_refs: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)

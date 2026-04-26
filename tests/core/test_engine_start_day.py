@@ -106,8 +106,8 @@ class StartDayWorkflowTest(unittest.TestCase):
             self.assertEqual(store.load_course()["current_day"], 1)
             self.assertIn("2026-04-23", paths.daily_dir.joinpath("day_01_learning.md").read_text(encoding="utf-8"))
             self.assertIn("2026-04-23", paths.daily_dir.joinpath("day_01_recall.md").read_text(encoding="utf-8"))
-            self.assertIn("First action", paths.daily_dir.joinpath("day_01_learning.md").read_text(encoding="utf-8"))
-            self.assertIn("Immediate recall", paths.daily_dir.joinpath("day_01_recall.md").read_text(encoding="utf-8"))
+            self.assertIn("첫 행동", paths.daily_dir.joinpath("day_01_learning.md").read_text(encoding="utf-8"))
+            self.assertIn("즉시 회상", paths.daily_dir.joinpath("day_01_recall.md").read_text(encoding="utf-8"))
 
     def test_failed_learning_item_reappears_in_next_day_recall(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -215,6 +215,88 @@ class StartDayWorkflowTest(unittest.TestCase):
             self.assertEqual(day_one.applied_items, ["item_a", "item_b"])
             self.assertEqual(day_two.applied_items, ["item_c"])
 
+    def test_start_day_uses_explicit_study_order_before_localized_block_name(self) -> None:
+        with TemporaryDirectory() as tmp:
+            engine = StudyEngine(Path(tmp))
+            engine.initialize_course(
+                self._course_payload(
+                    blocks=[
+                        {
+                            "block_id": "late_korean_sort",
+                            "block_name": "가나다 선행처럼 보이는 블록",
+                            "block_type": "concept",
+                            "importance": "high",
+                            "difficulty": "medium",
+                            "exam_relevance": "high",
+                            "needs_prereq": False,
+                            "needs_visuals": False,
+                            "study_order": 3,
+                        },
+                        {
+                            "block_id": "first_by_order",
+                            "block_name": "중간고사 전략",
+                            "block_type": "exam-strategy",
+                            "importance": "high",
+                            "difficulty": "medium",
+                            "exam_relevance": "high",
+                            "needs_prereq": False,
+                            "needs_visuals": False,
+                            "study_order": 1,
+                        },
+                        {
+                            "block_id": "second_by_order",
+                            "block_name": "소프트웨어 프로세스",
+                            "block_type": "concept",
+                            "importance": "medium",
+                            "difficulty": "medium",
+                            "exam_relevance": "medium",
+                            "needs_prereq": False,
+                            "needs_visuals": False,
+                            "study_order": 2,
+                        },
+                    ],
+                    items=[
+                        {
+                            "item_id": "late_item",
+                            "block_id": "late_korean_sort",
+                            "prompt": "Explain late item.",
+                            "answer_mode": "short-answer",
+                            "difficulty": "medium",
+                            "exam_relevance": "high",
+                            "needs_visuals": False,
+                        },
+                        {
+                            "item_id": "first_item",
+                            "block_id": "first_by_order",
+                            "prompt": "Explain first item.",
+                            "answer_mode": "short-answer",
+                            "difficulty": "low",
+                            "exam_relevance": "high",
+                            "needs_visuals": False,
+                        },
+                        {
+                            "item_id": "second_item",
+                            "block_id": "second_by_order",
+                            "prompt": "Explain second item.",
+                            "answer_mode": "short-answer",
+                            "difficulty": "medium",
+                            "exam_relevance": "medium",
+                            "needs_visuals": False,
+                        },
+                    ],
+                    visual_requirements=[],
+                )
+            )
+
+            day_one = engine.start_day("operating-systems-midterm", day_index=1, today="2026-04-23")
+
+            self.assertEqual(day_one.applied_items, ["first_item", "second_item"])
+            learning_text = Path(tmp).joinpath(
+                "courses", "operating-systems-midterm", "outputs", "daily", "day_01_learning.md"
+            ).read_text(encoding="utf-8")
+            self.assertLess(learning_text.index("중간고사 전략"), learning_text.index("소프트웨어 프로세스"))
+            self.assertNotIn("late_item", learning_text)
+
     def test_start_day_rejects_unknown_course_without_creating_directories(self) -> None:
         with TemporaryDirectory() as tmp:
             workspace = Path(tmp)
@@ -266,7 +348,7 @@ class StartDayWorkflowTest(unittest.TestCase):
             learning_text = paths.daily_dir.joinpath("day_01_learning.md").read_text(encoding="utf-8")
             recall_text = paths.daily_dir.joinpath("day_01_recall.md").read_text(encoding="utf-8")
 
-            self.assertIn("## Required visuals\n- None", learning_text)
-            self.assertIn("## Visual gate checks\n- None", recall_text)
+            self.assertIn("## 필요한 시각자료\n- 없음", learning_text)
+            self.assertIn("## 시각자료 게이트 확인\n- 없음", recall_text)
             self.assertNotIn("uml-use-case-arrow.png", learning_text)
             self.assertNotIn("uml-use-case-arrow.png", recall_text)

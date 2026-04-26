@@ -59,6 +59,24 @@ def _require_optional_string(value: object, label: str, default: str = "") -> st
     return _require_string(value, label)
 
 
+def _require_optional_string_list(value: object, label: str) -> list[str]:
+    if value is None:
+        return []
+    rows = _require_list(value, label)
+    strings: list[str] = []
+    for index, row in enumerate(rows):
+        strings.append(_require_string(row, f"{label}[{index}]"))
+    return strings
+
+
+def _require_optional_positive_int(value: object, label: str) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise ValidationError(f"{label} must be a positive integer when provided")
+    return value
+
+
 def _require_allowed_string(value: object, label: str, allowed_values: set[str]) -> str:
     text = _require_string(value, label)
     if text not in allowed_values:
@@ -143,6 +161,8 @@ def validate_init_course_request(payload: dict) -> InitCourseRequest:
         exam_relevance = _require_string(raw["exam_relevance"], "exam_relevance")
         needs_prereq = _require_bool(raw["needs_prereq"], "needs_prereq")
         needs_visuals = _require_bool(raw["needs_visuals"], "needs_visuals")
+        study_order = _require_optional_positive_int(raw.get("study_order"), "study_order")
+        study_goal = _require_optional_string(raw.get("study_goal"), "study_goal")
         blocks.append(
             Block(
                 block_id=block_id,
@@ -153,6 +173,8 @@ def validate_init_course_request(payload: dict) -> InitCourseRequest:
                 exam_relevance=exam_relevance,
                 needs_prereq=needs_prereq,
                 needs_visuals=needs_visuals,
+                study_order=study_order,
+                study_goal=study_goal,
             )
         )
 
@@ -184,6 +206,11 @@ def validate_init_course_request(payload: dict) -> InitCourseRequest:
         difficulty = _require_string(raw["difficulty"], "difficulty")
         exam_relevance = _require_string(raw["exam_relevance"], "exam_relevance")
         needs_visuals = _require_bool(raw["needs_visuals"], "needs_visuals")
+        learning_note = _require_optional_string(raw.get("learning_note"), "learning_note")
+        answer_key = _require_optional_string(raw.get("answer_key"), "answer_key")
+        rubric = _require_optional_string(raw.get("rubric"), "rubric")
+        common_mistakes = _require_optional_string_list(raw.get("common_mistakes"), "common_mistakes")
+        source_refs = _require_optional_string_list(raw.get("source_refs"), "source_refs")
         if block_id not in block_ids:
             raise ValidationError(f"item {item_id} references unknown block {block_id}")
         items.append(
@@ -195,6 +222,11 @@ def validate_init_course_request(payload: dict) -> InitCourseRequest:
                 difficulty=difficulty,
                 exam_relevance=exam_relevance,
                 needs_visuals=needs_visuals,
+                learning_note=learning_note,
+                answer_key=answer_key,
+                rubric=rubric,
+                common_mistakes=common_mistakes,
+                source_refs=source_refs,
             )
         )
 

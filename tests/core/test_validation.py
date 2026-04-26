@@ -50,10 +50,21 @@ class ValidationTest(unittest.TestCase):
 
     def test_init_request_builds_typed_models(self) -> None:
         payload = self._valid_init_payload()
+        payload["blocks"][0]["study_order"] = 2
+        payload["blocks"][0]["study_goal"] = "Use this after textual use-case basics."
+        payload["items"][0]["learning_note"] = "Include is mandatory reuse; extend is optional behavior."
+        payload["items"][0]["answer_key"] = "Mention mandatory reuse, optional extension, and dependency direction."
+        payload["items"][0]["rubric"] = "Full credit requires both semantics and arrow direction."
+        payload["items"][0]["common_mistakes"] = ["Treating include as sequence order."]
+        payload["items"][0]["source_refs"] = ["slides/week06.pdf p.12", "transcript SE-0325"]
 
         request = validate_init_course_request(payload)
         self.assertEqual(request.course.course_slug, "operating-systems-midterm")
         self.assertEqual(request.blocks[0].block_id, "use_case_diagram")
+        self.assertEqual(request.blocks[0].study_order, 2)
+        self.assertEqual(request.items[0].answer_key, "Mention mandatory reuse, optional extension, and dependency direction.")
+        self.assertEqual(request.items[0].common_mistakes, ["Treating include as sequence order."])
+        self.assertEqual(request.items[0].source_refs, ["slides/week06.pdf p.12", "transcript SE-0325"])
 
     def test_init_request_rejects_non_string_course_slug(self) -> None:
         payload = self._valid_init_payload()
@@ -174,11 +185,19 @@ class ValidationTest(unittest.TestCase):
         string_payload["items"][0]["prompt"] = ["Explain include vs extend."]
         bool_payload = self._valid_init_payload()
         bool_payload["items"][0]["needs_visuals"] = "yes"
+        mistakes_payload = self._valid_init_payload()
+        mistakes_payload["items"][0]["common_mistakes"] = ["ok", 3]
+        refs_payload = self._valid_init_payload()
+        refs_payload["items"][0]["source_refs"] = "slides/week06.pdf"
 
         with self.assertRaises(ValidationError):
             validate_init_course_request(string_payload)
         with self.assertRaises(ValidationError):
             validate_init_course_request(bool_payload)
+        with self.assertRaises(ValidationError):
+            validate_init_course_request(mistakes_payload)
+        with self.assertRaises(ValidationError):
+            validate_init_course_request(refs_payload)
 
     def test_init_request_rejects_duplicate_item_ids(self) -> None:
         payload = self._valid_init_payload()

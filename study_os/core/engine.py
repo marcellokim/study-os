@@ -26,10 +26,21 @@ from study_os.core.validation import (
 _IMPORTANCE_ORDER = {"high": 0, "medium": 1, "low": 2}
 _PRIORITY_ORDER = {"urgent": 0, "high": 1, "medium": 2, "low": 3}
 _NEW_BLOCKS_PER_DAY = 2
+_FALLBACK_STUDY_ORDER = 10**9
 
 
 def _pending_visual_requirements(visuals: list[VisualRequirement]) -> list[VisualRequirement]:
     return [visual for visual in visuals if visual.status != "available"]
+
+
+def _block_schedule_key(block: Block) -> tuple[bool, int, int, str, str]:
+    return (
+        block.study_order is None,
+        block.study_order or _FALLBACK_STUDY_ORDER,
+        _IMPORTANCE_ORDER.get(block.importance, len(_IMPORTANCE_ORDER)),
+        block.block_name,
+        block.block_id,
+    )
 
 
 class StudyEngine:
@@ -111,14 +122,7 @@ class StudyEngine:
             items_by_block.setdefault(item.block_id, []).append(item)
         items_by_id = {item.item_id: item for item in items}
 
-        sorted_blocks = sorted(
-            blocks,
-            key=lambda block: (
-                _IMPORTANCE_ORDER.get(block.importance, len(_IMPORTANCE_ORDER)),
-                block.block_name,
-                block.block_id,
-            ),
-        )
+        sorted_blocks = sorted(blocks, key=_block_schedule_key)
         start_index = max(day_index - 1, 0) * _NEW_BLOCKS_PER_DAY
         selected_blocks = sorted_blocks[start_index:start_index + _NEW_BLOCKS_PER_DAY]
         due_review_entries = [
@@ -140,7 +144,15 @@ class StudyEngine:
             encoding="utf-8",
         )
         recall_file.write_text(
-            build_recall_packet(course, day_index, due_review_entries, items_by_id, selected_visuals, today=today),
+            build_recall_packet(
+                course,
+                day_index,
+                due_review_entries,
+                items_by_id,
+                selected_visuals,
+                today=today,
+                new_items=[item for block in selected_blocks for item in items_by_block.get(block.block_id, [])],
+            ),
             encoding="utf-8",
         )
 

@@ -5,8 +5,11 @@ from collections import Counter
 from study_os.core.models import Block, CourseConfig, Item, QueueEntry, VisualRequirement
 
 
-def _block_sort_key(block: Block) -> tuple[str, str]:
-    return (block.block_name, block.block_id)
+_FALLBACK_ORDER = 10**9
+
+
+def _block_sort_key(block: Block) -> tuple[bool, int, str, str]:
+    return (block.study_order is None, block.study_order or _FALLBACK_ORDER, block.block_name, block.block_id)
 
 
 def _item_sort_key(item: Item) -> tuple[str, str]:
@@ -30,31 +33,62 @@ def _queue_entry_sort_key(entry: QueueEntry) -> tuple[bool, int, str, str, str, 
     )
 
 
+def _has_learning_support(item: Item) -> bool:
+    return bool(item.learning_note or item.answer_key or item.rubric or item.common_mistakes or item.source_refs)
+
+
+def _append_item_support(lines: list[str], item: Item) -> None:
+    lines.append(f"### `{item.item_id}`")
+    lines.append(f"- 문제: {item.prompt}")
+    if item.learning_note:
+        lines.append(f"- 핵심 개념: {item.learning_note}")
+    if item.answer_key:
+        lines.append(f"- 정답 기준: {item.answer_key}")
+    if item.rubric:
+        lines.append(f"- 채점 기준: {item.rubric}")
+    if item.common_mistakes:
+        lines.append("- 흔한 오답:")
+        lines.extend(f"  - {mistake}" for mistake in item.common_mistakes)
+    if item.source_refs:
+        lines.append("- 근거:")
+        lines.extend(f"  - {source_ref}" for source_ref in item.source_refs)
+    lines.append("")
+
+
 def build_master_plan(course: CourseConfig, blocks: list[Block], items: list[Item]) -> str:
     item_counts = Counter(item.block_id for item in items)
+    supported_items = sum(1 for item in items if item.answer_key and item.rubric and item.source_refs)
     lines = [
-        f"# {course.course_name} Master Plan",
+        f"# {course.course_name} 학습 마스터 플랜",
         "",
-        f"- Exam date: {course.exam_date}",
-        f"- Total blocks: {len(blocks)}",
-        f"- Total items: {len(items)}",
+        f"- 시험일: {course.exam_date}",
+        f"- 총 블록: {len(blocks)}",
+        f"- 총 문항: {len(items)}",
+        f"- 정답/채점/근거 포함 문항: {supported_items}/{len(items)}",
         "",
-        "## Block map",
+        "## 블록 지도",
     ]
-    for block in sorted(blocks, key=lambda block: (block.importance != "high", block.block_name)):
+    for block in sorted(blocks, key=lambda block: (
+        block.study_order is None,
+        block.study_order or _FALLBACK_ORDER,
+        block.importance != "high",
+        block.block_name,
+    )):
         lines.extend(
             [
                 f"### {block.block_name} (`{block.block_id}`)",
-                f"- Type: {block.block_type}",
-                f"- Importance: {block.importance}",
-                f"- Difficulty: {block.difficulty}",
-                f"- Exam relevance: {block.exam_relevance}",
-                f"- Item count: {item_counts[block.block_id]}",
+                f"- 학습 순서: {block.study_order if block.study_order is not None else '미지정'}",
+                f"- 유형: {block.block_type}",
+                f"- 중요도: {block.importance}",
+                f"- 난이도: {block.difficulty}",
+                f"- 시험 관련도: {block.exam_relevance}",
+                f"- 문항 수: {item_counts[block.block_id]}",
                 "",
             ]
         )
     for item in sorted(items, key=lambda item: (item.block_id, item.item_id)):
-        lines.append(f"- `{item.item_id}`: {item.prompt}")
+        support = "정답/근거 있음" if item.answer_key and item.source_refs else "정답/근거 보강 필요"
+        lines.append(f"- `{item.item_id}` ({support}): {item.prompt}")
     return "\n".join(lines) + "\n"
 
 
@@ -73,25 +107,25 @@ def build_learning_packet(
     }
 
     lines = [
-        f"# Day {day_index:02d} Learning Packet — {course.course_name}",
+        f"# Day {day_index:02d} 학습 패킷 — {course.course_name}",
         "",
     ]
     if today is not None:
-        lines.extend([f"- Date: {today}", ""])
-    lines.append("## First action")
+        lines.extend([f"- 날짜: {today}", ""])
+    lines.append("## 첫 행동")
     if not sorted_blocks:
         lines.extend(
             [
-                "- No new blocks scheduled today.",
+                "- 오늘 새로 배울 블록이 없습니다.",
                 "",
-                "## New blocks",
-                "- None",
+                "## 신규 블록",
+                "- 없음",
                 "",
-                "## Required visuals",
-                "- None",
+                "## 필요한 시각자료",
+                "- 없음",
                 "",
-                "## Done means",
-                "- Confirm there are no scheduled new blocks before ending the session.",
+                "## 완료 기준",
+                "- 세션을 끝내기 전에 예정된 신규 블록이 없는지 확인한다.",
             ]
         )
         return "\n".join(lines) + "\n"
@@ -101,30 +135,40 @@ def build_learning_packet(
         None,
     )
     if first_item is None:
-        lines.append("- No item prompts scheduled for today.")
+        lines.append("- 오늘 예정된 문항 프롬프트가 없습니다.")
     else:
-        lines.append(f"- Start with `{first_item.item_id}` and answer: {first_item.prompt}")
-    lines.extend(["", "## New blocks"])
+        lines.append(f"- 먼저 `{first_item.item_id}`에 답하세요: {first_item.prompt}")
+    lines.extend(["", "## 신규 블록"])
 
     for block in sorted_blocks:
         lines.extend(
             [
                 f"### {block.block_name}",
-                f"- Block type: {block.block_type}",
-                f"- Importance: {block.importance}",
-                "- Required learning behavior: explain, contrast, or reconstruct without notes before checking the source.",
+                f"- 블록 유형: {block.block_type}",
+                f"- 중요도: {block.importance}",
+                "- 학습 방식: 노트를 보기 전에 설명, 비교, 재구성한다.",
             ]
         )
         for item in sorted_items_by_block[block.block_id]:
             lines.append(f"- `{item.item_id}` — {item.prompt}")
         lines.append("")
-    lines.append("## Required visuals")
+    supported_items = [
+        item
+        for block in sorted_blocks
+        for item in sorted_items_by_block[block.block_id]
+        if _has_learning_support(item)
+    ]
+    if supported_items:
+        lines.append("## 문항별 학습 카드")
+        for item in supported_items:
+            _append_item_support(lines, item)
+    lines.append("## 필요한 시각자료")
     if sorted_visuals:
         for visual in sorted_visuals:
-            lines.append(f"- `{visual.required_image}` for `{visual.item_id}`: {visual.description}")
+            lines.append(f"- `{visual.item_id}`: `{visual.required_image}` 필요 — {visual.description}")
     else:
-        lines.append("- None")
-    lines.extend(["", "## Done means", "- Each new item got at least one active attempt and is ready for same-day R0 recall."])
+        lines.append("- 없음")
+    lines.extend(["", "## 완료 기준", "- 각 신규 문항을 최소 1회 능동 회상하고, 당일 R0 복습 준비 상태로 만든다."])
     return "\n".join(lines) + "\n"
 
 
@@ -135,32 +179,48 @@ def build_recall_packet(
     items_by_id: dict[str, Item],
     visuals: list[VisualRequirement],
     today: str | None = None,
+    new_items: list[Item] | None = None,
 ) -> str:
     sorted_queue_entries = sorted(queue_entries, key=_queue_entry_sort_key)
     sorted_visuals = sorted(visuals, key=_visual_sort_key)
     lines = [
-        f"# Day {day_index:02d} Recall Packet — {course.course_name}",
+        f"# Day {day_index:02d} 복습 패킷 — {course.course_name}",
         "",
     ]
     if today is not None:
-        lines.extend([f"- Date: {today}", ""])
-    lines.append("## Immediate recall")
+        lines.extend([f"- 날짜: {today}", ""])
+    lines.append("## 즉시 회상")
     if not sorted_queue_entries:
-        lines.append("- No due review items yet. Run same-day recall after finishing new learning.")
+        lines.append("- 아직 마감된 복습 문항이 없습니다. 신규 학습 후 당일 회상을 실행하세요.")
     for entry in sorted_queue_entries:
         item = items_by_id[entry.item_id]
         lines.extend(
             [
                 f"- `{entry.item_id}` ({entry.priority}) — {item.prompt}",
-                f"  - Last result: {entry.last_result}; confidence: {entry.confidence}; reason: {entry.reason}",
+                f"  - 직전 결과: {entry.last_result}; 자신감: {entry.confidence}; 이유: {entry.reason}",
             ]
         )
-    lines.extend(["", "## Visual gate checks"])
+    sorted_new_items = sorted(new_items or [], key=_item_sort_key)
+    if sorted_new_items:
+        lines.extend(
+            [
+                "",
+                "## 당일 R0 회상",
+                "- 먼저 답한 뒤 기준으로 채점하고, 부족하면 학습 패킷의 문항별 학습 카드를 다시 확인하세요.",
+            ]
+        )
+        for item in sorted_new_items:
+            lines.append(f"- `{item.item_id}` — {item.prompt}")
+            if item.answer_key:
+                lines.append(f"  - 정답 기준: {item.answer_key}")
+            if item.rubric:
+                lines.append(f"  - 채점 기준: {item.rubric}")
+    lines.extend(["", "## 시각자료 게이트 확인"])
     if sorted_visuals:
         for visual in sorted_visuals:
-            lines.append(f"- `{visual.item_id}` requires `{visual.required_image}` before promotion.")
+            lines.append(f"- `{visual.item_id}`은/는 `{visual.required_image}` 확보 전 승급 금지.")
     else:
-        lines.append("- None")
+        lines.append("- 없음")
     return "\n".join(lines) + "\n"
 
 
@@ -175,34 +235,38 @@ def build_final_recall_pack(
     sorted_queue_entries = sorted(queue_entries, key=_queue_entry_sort_key)
     sorted_visuals = sorted(visuals, key=_visual_sort_key)
     lines = [
-        f"# Final Recall Pack — {course.course_name}",
+        f"# 최종 회상 팩 — {course.course_name}",
         "",
-        f"- Exam date: {course.exam_date}",
+        f"- 시험일: {course.exam_date}",
     ]
     if today is not None:
-        lines.append(f"- Generated on: {today}")
+        lines.append(f"- 생성일: {today}")
     lines.extend(
         [
-            "- Rule: no scope expansion, only recall stabilization.",
+            "- 규칙: 범위를 넓히지 말고 회상 안정화만 수행한다.",
         "",
-        "## Highest-risk items",
+        "## 최고 위험 문항",
         ]
     )
     for entry in sorted_queue_entries:
         item = items_by_id[entry.item_id]
         block = blocks_by_id[entry.block_id]
-        lines.append(f"- `{entry.item_id}` in {block.block_name}: {item.prompt} ({entry.reason})")
+        lines.append(f"- `{entry.item_id}` ({block.block_name}): {item.prompt} ({entry.reason})")
+        if item.answer_key:
+            lines.append(f"  - 정답 기준: {item.answer_key}")
+        if item.common_mistakes:
+            lines.append(f"  - 주의: {'; '.join(item.common_mistakes)}")
     lines.extend(
         [
             "",
-            "## Mistake-prevention checklist",
-            "- Say the answer from memory before checking notes.",
-            "- Compare confusing pairs out loud.",
-            "- Do not promote image-dependent items without the referenced image.",
+            "## 실수 방지 체크리스트",
+            "- 노트를 확인하기 전에 기억만으로 먼저 답한다.",
+            "- 헷갈리는 쌍은 소리 내어 비교한다.",
+            "- 이미지 의존 문항은 참조 이미지를 확보하기 전 승급하지 않는다.",
         ]
     )
     if sorted_visuals:
-        lines.extend(["", "## Required visuals"])
+        lines.extend(["", "## 필요한 시각자료"])
         for visual in sorted_visuals:
-            lines.append(f"- `{visual.required_image}` for `{visual.item_id}`")
+            lines.append(f"- `{visual.item_id}`: `{visual.required_image}`")
     return "\n".join(lines) + "\n"

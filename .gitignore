@@ -4,8 +4,14 @@ worktrees/
 __pycache__/
 *.pyc
 .venv/
+venv/
 .tmp/
 /courses/
 /workspace.md
+logs/
+*.log
+.env
+.env.*
+!.env.example
 
 .DS_Store

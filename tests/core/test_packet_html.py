@@ -165,6 +165,47 @@ class PacketHtmlTest(unittest.TestCase):
         self.assertIn("/api/close-session-draft", html)
         self.assertIn('session_date: "2026-05-18"', html)
 
+    def test_close_session_draft_waits_for_pending_draft_answer_saves(self) -> None:
+        packet = PacketPage(
+            packet_type="recall",
+            page_title="Day 01 회상 패킷",
+            course_slug="operating-systems-midterm",
+            course_name="Operating Systems Midterm",
+            day_index=1,
+            generated_date="2026-05-18",
+            summary_text="summary",
+            sections=[
+                PacketSection(
+                    section_id="items",
+                    title="문항별 회상 카드",
+                    entries=[
+                        PacketEntry(
+                            item_id="paging",
+                            block_id="memory",
+                            prompt="Explain paging.",
+                        )
+                    ],
+                )
+            ],
+        )
+
+        html = render_packet_html(packet, packet_links={})
+
+        self.assertIn("const pendingDraftAnswerSaves = new Set();", html)
+        self.assertIn("async function saveDraftAnswer(textarea)", html)
+        self.assertIn("pendingDraftAnswerSaves.add(savePromise)", html)
+        self.assertIn("pendingDraftAnswerSaves.delete(savePromise)", html)
+        self.assertIn("textarea.addEventListener('blur', async () =>", html)
+        self.assertIn("await saveDraftAnswer(textarea)", html)
+        self.assertIn(
+            "await Promise.allSettled(Array.from(pendingDraftAnswerSaves));",
+            html,
+        )
+        self.assertLess(
+            html.index("await Promise.allSettled(Array.from(pendingDraftAnswerSaves));"),
+            html.index("const response = await fetch(`/api/close-session-draft?${params.toString()}`);"),
+        )
+
     def test_html_renders_available_visual_as_asset_figure(self) -> None:
         packet = PacketPage(
             packet_type="learning",
@@ -234,3 +275,34 @@ class PacketHtmlTest(unittest.TestCase):
         self.assertIn("Missing class diagram", html)
         self.assertIn("diagrams/missing diagram.png", html)
         self.assertNotIn('src="/assets/diagrams/missing%20diagram.png"', html)
+
+    def test_visual_asset_url_encodes_dot_segments(self) -> None:
+        packet = PacketPage(
+            packet_type="learning",
+            page_title="Day 01 학습 패킷",
+            course_slug="software-engineering-midterm-testflight",
+            course_name="Software Engineering Midterm",
+            day_index=1,
+            generated_date="2026-05-18",
+            summary_text="summary",
+            sections=[
+                PacketSection(
+                    section_id="visuals",
+                    title="시각 자료",
+                    visual_requirements=[
+                        PacketVisual(
+                            item_id="secret",
+                            required_image="../secret.png",
+                            description="Unsafe traversal path",
+                            status="available",
+                        )
+                    ],
+                )
+            ],
+        )
+
+        html = render_packet_html(packet, packet_links={})
+
+        self.assertNotIn('src="/assets/../secret.png"', html)
+        self.assertIn('src="/assets/%2E%2E/secret.png"', html)
+        self.assertIn("../secret.png", html)

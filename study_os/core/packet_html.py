@@ -29,7 +29,15 @@ def _json_for_script(value: object) -> str:
 
 
 def _asset_url(relative_path: str) -> str:
-    return "/assets/" + quote(relative_path.lstrip("/"), safe="/._-~")
+    safe_segments = []
+    for segment in relative_path.lstrip("/").split("/"):
+        if segment == ".":
+            safe_segments.append("%2E")
+        elif segment == "..":
+            safe_segments.append("%2E%2E")
+        else:
+            safe_segments.append(quote(segment, safe="._-~"))
+    return "/assets/" + "/".join(safe_segments)
 
 
 def _style_block() -> str:
@@ -579,6 +587,7 @@ def render_packet_html(packet: PacketPage, *, packet_links: dict[str, str]) -> s
         day_index: {day_index_json},
         session_date: {generated_date_json}
       }};
+      const pendingDraftAnswerSaves = new Set();
 
       function progressKey() {{
         if (packetProgressContext.day_index === null || packetProgressContext.day_index === undefined) {{
@@ -661,6 +670,28 @@ def render_packet_html(packet: PacketPage, *, packet_links: dict[str, str]) -> s
         }}
       }}
 
+      async function saveDraftAnswer(textarea) {{
+        const container = textarea.closest('.packet-entry');
+        textarea.disabled = true;
+        const savePromise = saveProgress({{
+          action: 'attempt',
+          item_id: textarea.dataset.itemId,
+          draft_answer: textarea.value
+        }}, container);
+        pendingDraftAnswerSaves.add(savePromise);
+        try {{
+          await savePromise;
+        }} catch (error) {{
+          const status = container ? container.querySelector('.packet-save-state') : null;
+          if (status) {{
+            status.textContent = '저장 실패';
+          }}
+        }} finally {{
+          pendingDraftAnswerSaves.delete(savePromise);
+          textarea.disabled = false;
+        }}
+      }}
+
       document.querySelectorAll('input[type="checkbox"][data-action="checked"]').forEach((checkbox) => {{
         checkbox.addEventListener('change', async () => {{
           const previous = !checkbox.checked;
@@ -714,22 +745,7 @@ def render_packet_html(packet: PacketPage, *, packet_links: dict[str, str]) -> s
 
       document.querySelectorAll('textarea[data-action="draft-answer"]').forEach((textarea) => {{
         textarea.addEventListener('blur', async () => {{
-          const container = textarea.closest('.packet-entry');
-          textarea.disabled = true;
-          try {{
-            await saveProgress({{
-              action: 'attempt',
-              item_id: textarea.dataset.itemId,
-              draft_answer: textarea.value
-            }}, container);
-          }} catch (error) {{
-            const status = container ? container.querySelector('.packet-save-state') : null;
-            if (status) {{
-              status.textContent = '저장 실패';
-            }}
-          }} finally {{
-            textarea.disabled = false;
-          }}
+          await saveDraftAnswer(textarea);
         }});
       }});
 
@@ -747,6 +763,7 @@ def render_packet_html(packet: PacketPage, *, packet_links: dict[str, str]) -> s
           params.set('day_index', String(packetProgressContext.day_index));
         }}
         try {{
+          await Promise.allSettled(Array.from(pendingDraftAnswerSaves));
           const response = await fetch(`/api/close-session-draft?${{params.toString()}}`);
           if (!response.ok) {{
             throw new Error('close-session draft failed');

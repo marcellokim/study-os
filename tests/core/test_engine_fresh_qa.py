@@ -164,6 +164,34 @@ class EngineFreshQAContextTest(unittest.TestCase):
             self.assertEqual(context["phase1_context"]["packet_item_ids"], [])
             self.assertEqual(context["phase2_context"]["items"], [])
 
+    def test_stale_learning_html_with_tampered_known_prompt_blocks_packet(self) -> None:
+        with TemporaryDirectory() as tmp:
+            engine, _store = self._initialized_day_one(tmp)
+            paths = build_course_paths(Path(tmp), "software-engineering-midterm")
+            paths.learning_packet_html_file(day_index=1).write_text(
+                """
+                <html><body>
+                  <article class="packet-entry" data-item-id="sequence_diagram_trace">
+                    <div class="packet-entry-header">
+                      <label class="packet-check">
+                        <input type="checkbox" data-action="checked" data-item-id="sequence_diagram_trace">
+                        <span>Tampered prompt that the current course item does not contain.</span>
+                      </label>
+                    </div>
+                  </article>
+                </body></html>
+                """,
+                encoding="utf-8",
+            )
+
+            context = engine.build_fresh_qa_context("software-engineering-midterm", today="2026-05-22")
+
+            self.assertTrue(context["selected_packet"]["exists"])
+            self.assertFalse(context["selected_packet"]["openable"])
+            self.assertEqual(context["next_action"]["kind"], "packet_blocked")
+            self.assertEqual(context["phase1_context"]["packet_item_ids"], [])
+            self.assertEqual(context["phase2_context"]["items"], [])
+
     def test_unreadable_learning_html_blocks_packet_without_deriving_phase2_items(self) -> None:
         with TemporaryDirectory() as tmp:
             engine, _store = self._initialized_day_one(tmp)

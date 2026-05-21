@@ -323,6 +323,38 @@ class FreshQAResultTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "phase2 item without phase1 attempt"):
             normalize_fresh_qa_result(payload)
 
+    def test_rejects_phase1_attempt_without_phase2_grading(self) -> None:
+        payload = complete_pass_result()
+        payload["phase1_attempts"].append(
+            {
+                "item_id": "ungraded_attempt",
+                "answerable_from_packet": True,
+                "draft_answer": "Second answer.",
+                "confidence_score": 3,
+                "visible_blockers": [],
+                "answer_first_supported": True,
+            }
+        )
+
+        with self.assertRaisesRegex(ValueError, "phase1 attempt without phase2 grading"):
+            normalize_fresh_qa_result(payload)
+
+    def test_rejects_duplicate_phase2_grading_item_id(self) -> None:
+        payload = complete_pass_result()
+        payload["phase2_grading"].append(dict(payload["phase2_grading"][0]))
+
+        with self.assertRaisesRegex(ValueError, "duplicate phase2 grading item_id"):
+            normalize_fresh_qa_result(payload)
+
+    def test_rejects_pass_gate_when_any_grading_result_is_not_correct(self) -> None:
+        payload = complete_pass_result()
+        payload["phase2_grading"][0]["result"] = "wrong"
+        payload["phase2_grading"][0]["failure_source"] = "learner_difficulty"
+        payload["gate"] = "pass"
+
+        with self.assertRaisesRegex(ValueError, "weaker gate"):
+            normalize_fresh_qa_result(payload)
+
     def test_rejects_correct_result_when_packet_or_grading_support_is_missing(self) -> None:
         payload = complete_pass_result()
         payload["phase1_attempts"][0]["answerable_from_packet"] = False

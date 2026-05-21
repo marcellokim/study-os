@@ -462,6 +462,26 @@ class CliSmokeTest(unittest.TestCase):
             self.assertIn("phase1_context", payload["courses"][0])
             self.assertIn("phase2_context", payload["courses"][0])
 
+    def test_fresh_qa_context_rejects_phase2_only_output(self) -> None:
+        completed = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "study_os",
+                "fresh-qa-context",
+                "--today",
+                "2026-05-22",
+                "--phase",
+                "phase2",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(completed.returncode, 2)
+        self.assertIn("invalid choice", completed.stderr)
+
     def test_fresh_qa_report_renders_valid_result_json(self) -> None:
         with TemporaryDirectory() as tmp:
             result_file = Path(tmp) / "fresh-qa-result.json"

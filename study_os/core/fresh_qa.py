@@ -75,15 +75,15 @@ def computed_gate_for(
     *,
     failure_type: str,
     self_grading_blocked: bool = False,
+    non_correct_grading: bool = False,
 ) -> str:
     axis_gate = _axis_driven_gate_for(axis_scorecard)
     failure_gate = _failure_type_gate_for(
         failure_type,
         self_grading_blocked=self_grading_blocked,
     )
-    if GATE_STRENGTH[failure_gate] > GATE_STRENGTH[axis_gate]:
-        return failure_gate
-    return axis_gate
+    grading_gate = "warn" if non_correct_grading else "pass"
+    return max((axis_gate, failure_gate, grading_gate), key=lambda gate: GATE_STRENGTH[gate])
 
 
 def predicted_effect_for(gate: str, axis_scorecard: dict) -> str:
@@ -129,6 +129,9 @@ def normalize_fresh_qa_result(payload: dict) -> dict:
         failure_type=failure_type,
         self_grading_blocked=any(
             entry["self_grading_supported"] is False for entry in normalized["phase2_grading"]
+        ),
+        non_correct_grading=any(
+            entry["result"] != "correct" for entry in normalized["phase2_grading"]
         ),
     )
     if GATE_STRENGTH[gate] < GATE_STRENGTH[computed_gate]:
@@ -238,8 +241,12 @@ def _validate_phase_contract(attempts: list[dict], entries: list[dict]) -> None:
             raise ValueError(f"duplicate phase1 attempt item_id: {item_id}")
         attempts_by_id[item_id] = attempt
 
+    entries_by_id: dict[str, dict] = {}
     for index, entry in enumerate(entries):
         item_id = entry["item_id"]
+        if item_id in entries_by_id:
+            raise ValueError(f"duplicate phase2 grading item_id: {item_id}")
+        entries_by_id[item_id] = entry
         attempt = attempts_by_id.get(item_id)
         if attempt is None:
             raise ValueError(f"phase2 item without phase1 attempt: {item_id}")
@@ -288,6 +295,10 @@ def _validate_phase_contract(attempts: list[dict], entries: list[dict]) -> None:
             raise ValueError(
                 f"inconsistent phase2_grading[{index}]: unsupported source connection needs source-linked failure_source"
             )
+
+    for item_id in attempts_by_id:
+        if item_id not in entries_by_id:
+            raise ValueError(f"phase1 attempt without phase2 grading: {item_id}")
 
 
 def _require_mapping(value: object, field_name: str) -> Mapping:

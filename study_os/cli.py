@@ -77,8 +77,6 @@ def _fresh_qa_context_for_phase(context: dict[str, Any], phase: str) -> dict[str
     filtered = dict(context)
     if phase == "phase1":
         filtered.pop("phase2_context", None)
-    elif phase == "phase2":
-        filtered.pop("phase1_context", None)
     else:
         raise ValidationError(f"unknown fresh QA phase: {phase}")
     filtered["context_phase"] = phase
@@ -156,7 +154,7 @@ def build_parser() -> argparse.ArgumentParser:
     fresh_qa_context_parser.add_argument("--course")
     fresh_qa_context_parser.add_argument(
         "--phase",
-        choices=["phase1", "phase2", "all"],
+        choices=["phase1", "all"],
         default="phase1",
         help="Print only the learner-visible Phase 1 context by default; use all only for trusted orchestration.",
     )

@@ -43,15 +43,52 @@ class _PacketItemIdParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__()
         self.item_ids: list[str] = []
+        self.prompts_by_item_id: dict[str, str] = {}
+        self._current_item_id: str | None = None
+        self._in_entry_header = False
+        self._in_prompt_span = False
+        self._prompt_chunks: list[str] = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        if tag != "article":
-            return
         attr_map = dict(attrs)
         classes = set((attr_map.get("class") or "").split())
-        item_id = attr_map.get("data-item-id")
-        if "packet-entry" in classes and item_id:
-            self.item_ids.append(item_id)
+        if self._current_item_id is not None:
+            if tag == "div" and "packet-entry-header" in classes and not self._in_entry_header:
+                self._in_entry_header = True
+            elif self._in_entry_header and tag == "span" and not self._in_prompt_span:
+                self._in_prompt_span = True
+                self._prompt_chunks = []
+            return
+
+        if tag == "article" and "packet-entry" in classes:
+            item_id = attr_map.get("data-item-id")
+            if item_id:
+                self.item_ids.append(item_id)
+                self._current_item_id = item_id
+
+    def handle_endtag(self, tag: str) -> None:
+        if self._current_item_id is None:
+            return
+
+        if self._in_prompt_span and tag == "span":
+            prompt = " ".join("".join(self._prompt_chunks).split())
+            if prompt:
+                self.prompts_by_item_id[self._current_item_id] = prompt
+            self._in_prompt_span = False
+            self._prompt_chunks = []
+
+        if self._in_entry_header and tag == "div":
+            self._in_entry_header = False
+
+        if tag == "article":
+            self._current_item_id = None
+            self._in_entry_header = False
+            self._in_prompt_span = False
+            self._prompt_chunks = []
+
+    def handle_data(self, data: str) -> None:
+        if self._in_prompt_span:
+            self._prompt_chunks.append(data)
 
 
 def _pending_visual_requirements(visuals: list[VisualRequirement]) -> list[VisualRequirement]:
@@ -96,18 +133,18 @@ def _review_entry_is_due(entry: QueueEntry, *, day_index: int, today: str) -> bo
     return False
 
 
-def _packet_item_ids_from_html(html_path: Path) -> tuple[list[str] | None, bool]:
+def _packet_item_ids_from_html(html_path: Path) -> tuple[list[str] | None, dict[str, str], bool]:
     try:
         html = html_path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
-        return None, False
+        return None, {}, False
     parser = _PacketItemIdParser()
     try:
         parser.feed(html)
     except Exception:
-        return None, False
+        return None, {}, False
     item_ids = list(dict.fromkeys(parser.item_ids))
-    return item_ids, bool(item_ids)
+    return item_ids, parser.prompts_by_item_id, bool(item_ids)
 
 
 def _fresh_qa_packet_paths(paths: CoursePaths, *, packet_type: str, day_index: int) -> tuple[Path, Path, str]:
@@ -422,14 +459,25 @@ class StudyEngine:
             day_index=day_index,
         )
         items_by_id = {item.item_id: item for item in items}
-        parsed_html_item_ids, html_openable = _packet_item_ids_from_html(html_path)
+        parsed_html_item_ids, html_prompts_by_item_id, html_openable = _packet_item_ids_from_html(html_path)
         unknown_packet_item_ids = [
             item_id
             for item_id in (parsed_html_item_ids or [])
             if item_id not in items_by_id
         ]
+        stale_prompt_item_ids = [
+            item_id
+            for item_id in (parsed_html_item_ids or [])
+            if item_id in items_by_id
+            and html_prompts_by_item_id.get(item_id) != items_by_id[item_id].prompt
+        ]
         packet_exists = html_path.exists() or markdown_path.exists()
-        packet_openable = html_path.is_file() and html_openable and not unknown_packet_item_ids
+        packet_openable = (
+            html_path.is_file()
+            and html_openable
+            and not unknown_packet_item_ids
+            and not stale_prompt_item_ids
+        )
         selected_packet = {
             "packet_type": packet_type,
             "day_index": day_index,

@@ -15,6 +15,35 @@ from study_os.core.models import Item
 from study_os.core.packet_progress import set_packet_attempt, set_packet_checked
 from study_os.core.paths import build_course_paths
 from study_os.core.storage import CourseStore
+from study_os.core.validation import ValidationError, validate_iso_date_text, validate_positive_day_index
+
+
+_CLOSE_SESSION_DRAFT_PACKET_TYPES = frozenset({"learning", "recall", "final_recall"})
+_DAILY_CLOSE_SESSION_DRAFT_PACKET_TYPES = frozenset({"learning", "recall"})
+
+
+def validate_close_session_draft_params(
+    *,
+    packet_type: object,
+    day_index: object,
+    session_date: object,
+) -> tuple[str, int | None, str]:
+    packet_type_text = packet_type
+    if not isinstance(packet_type_text, str) or packet_type_text not in _CLOSE_SESSION_DRAFT_PACKET_TYPES:
+        raise ValidationError("packet_type must be one of: final_recall, learning, recall")
+
+    session_date_text = validate_iso_date_text(session_date, "session_date")
+
+    if packet_type_text in _DAILY_CLOSE_SESSION_DRAFT_PACKET_TYPES:
+        if day_index is None:
+            raise ValidationError("day_index is required for learning and recall packets")
+        day_index_value = validate_positive_day_index(day_index)
+    else:
+        if day_index is not None:
+            raise ValidationError("day_index must be omitted for final_recall packets")
+        day_index_value = None
+
+    return packet_type_text, day_index_value, session_date_text
 
 
 class PacketServer:
@@ -173,10 +202,18 @@ class PacketServer:
 
     def _close_session_draft_from_query(self, query: str) -> dict[str, object]:
         params = parse_qs(query)
-        packet_type = params.get("packet_type", [""])[0]
-        session_date = params.get("session_date", [""])[0]
+        packet_type = params.get("packet_type", [None])[0]
+        session_date = params.get("session_date", [None])[0]
         day_text = params.get("day_index", [None])[0]
-        day_index = int(day_text) if day_text not in {None, ""} else None
+        try:
+            parsed_day_index = int(day_text) if day_text not in {None, ""} else None
+        except ValueError as exc:
+            raise ValidationError("day_index must be a positive integer when provided") from exc
+        packet_type, day_index, session_date = validate_close_session_draft_params(
+            packet_type=packet_type,
+            day_index=parsed_day_index,
+            session_date=session_date,
+        )
         items_by_id = {row["item_id"]: Item(**row) for row in self.store.load_items()}
         return build_close_session_draft(
             course_slug=self.course_slug,
@@ -230,6 +267,8 @@ class PacketServer:
         try:
             day_index = int(segments[3])
         except ValueError:
+            return None
+        if day_index <= 0:
             return None
 
         return self._daily_packet_file(packet_type=packet_type, day_index=day_index)

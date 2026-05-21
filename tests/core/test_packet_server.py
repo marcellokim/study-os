@@ -255,6 +255,26 @@ class PacketServerTest(unittest.TestCase):
             self.assertEqual(response.status, 200)
             self.assertIn("Learning packet", body)
 
+    def test_get_learning_packet_with_non_positive_day_returns_404(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            paths = build_course_paths(workspace, "operating-systems-midterm")
+            paths.ensure_directories()
+            CourseStore(paths).save_packet_progress({})
+
+            server, thread = self._start_server(workspace)
+
+            connection = HTTPConnection("127.0.0.1", server.port)
+            connection.request("GET", "/packets/learning/day/0")
+            response = connection.getresponse()
+            response.read()
+            connection.close()
+
+            server.shutdown()
+            thread.join(timeout=1)
+
+            self.assertEqual(response.status, 404)
+
     def test_get_serves_workspace_asset_under_assets_route(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             workspace = Path(tmp)
@@ -442,6 +462,61 @@ class PacketServerTest(unittest.TestCase):
             self.assertEqual(payload["reviewed_items"][0]["result"], "partial")
             self.assertEqual(payload["reviewed_items"][0]["confidence"], "medium")
             self.assertEqual(payload["reviewed_items"][0]["error_code"], "C1")
+
+    def test_get_close_session_draft_rejects_missing_or_invalid_session_date(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            paths = build_course_paths(workspace, "operating-systems-midterm")
+            paths.ensure_directories()
+            CourseStore(paths).save_packet_progress({})
+
+            server, thread = self._start_server(workspace)
+
+            cases = [
+                "/api/close-session-draft?packet_type=learning&day_index=1",
+                "/api/close-session-draft?packet_type=learning&day_index=1&session_date=2026/05/21",
+            ]
+            for path in cases:
+                with self.subTest(path=path):
+                    connection = HTTPConnection("127.0.0.1", server.port)
+                    connection.request("GET", path)
+                    response = connection.getresponse()
+                    payload = json.loads(response.read().decode("utf-8"))
+                    connection.close()
+
+                    self.assertEqual(response.status, 400)
+                    self.assertIn("session_date", payload["error"])
+
+            server.shutdown()
+            thread.join(timeout=1)
+
+    def test_get_close_session_draft_rejects_invalid_packet_day_semantics(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            paths = build_course_paths(workspace, "operating-systems-midterm")
+            paths.ensure_directories()
+            CourseStore(paths).save_packet_progress({})
+
+            server, thread = self._start_server(workspace)
+
+            cases = [
+                "/api/close-session-draft?packet_type=quiz&day_index=1&session_date=2026-05-21",
+                "/api/close-session-draft?packet_type=learning&session_date=2026-05-21",
+                "/api/close-session-draft?packet_type=final_recall&day_index=1&session_date=2026-05-21",
+            ]
+            for path in cases:
+                with self.subTest(path=path):
+                    connection = HTTPConnection("127.0.0.1", server.port)
+                    connection.request("GET", path)
+                    response = connection.getresponse()
+                    payload = json.loads(response.read().decode("utf-8"))
+                    connection.close()
+
+                    self.assertEqual(response.status, 400)
+                    self.assertIn("error", payload)
+
+            server.shutdown()
+            thread.join(timeout=1)
 
     def test_progress_post_rejects_invalid_payload_without_persisting(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

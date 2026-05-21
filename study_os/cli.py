@@ -7,7 +7,7 @@ import sys
 from typing import Any
 
 from study_os.core.engine import StudyEngine
-from study_os.core.packet_server import PacketServer
+from study_os.core.packet_server import PacketServer, validate_close_session_draft_params
 from study_os.core.paths import build_course_paths
 from study_os.core.validation import ValidationError, validate_course_slug_text
 
@@ -127,7 +127,12 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"error: {exc}", file=sys.stderr)
                 return 2
             print(f"http://127.0.0.1:{server.port}", flush=True)
-            server.serve_forever()
+            try:
+                server.serve_forever()
+            except KeyboardInterrupt:
+                return 0
+            finally:
+                server.shutdown()
             return 0
 
         engine = StudyEngine(Path(parsed.workspace))
@@ -151,11 +156,16 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         if parsed.command == "draft-close-session":
-            draft = engine.build_close_session_draft(
-                parsed.course,
+            packet_type, day_index, session_date = validate_close_session_draft_params(
                 packet_type=parsed.packet_type,
                 day_index=parsed.day,
                 session_date=parsed.session_date,
+            )
+            draft = engine.build_close_session_draft(
+                parsed.course,
+                packet_type=packet_type,
+                day_index=day_index,
+                session_date=session_date,
             )
             print(json.dumps(draft, ensure_ascii=False, indent=2))
             return 0

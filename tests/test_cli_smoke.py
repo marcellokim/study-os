@@ -1,6 +1,7 @@
 import json
 from http.client import HTTPConnection
 from pathlib import Path
+import signal
 import socket
 import subprocess
 import sys
@@ -226,6 +227,45 @@ class CliSmokeTest(unittest.TestCase):
             self.assertEqual(completed.stdout, "")
             self.assertIn("error: ", completed.stderr)
             self.assertNotIn("Traceback", completed.stderr)
+
+    def test_serve_packets_sigint_exits_without_keyboardinterrupt_traceback(self) -> None:
+        with TemporaryDirectory() as tmp:
+            workspace = Path(tmp) / "workspace"
+            self._init_sample_course(workspace)
+
+            process = subprocess.Popen(
+                [
+                    sys.executable,
+                    "-u",
+                    "-m",
+                    "study_os",
+                    "--workspace",
+                    str(workspace),
+                    "serve-packets",
+                    "--course",
+                    "sample-course",
+                    "--port",
+                    "0",
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            line = process.stdout.readline().strip() if process.stdout is not None else ""
+            self.assertIn("http://127.0.0.1:", line)
+
+            process.send_signal(signal.SIGINT)
+            try:
+                stdout, stderr = process.communicate(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.communicate(timeout=5)
+                self.fail("serve-packets did not exit after SIGINT")
+
+            self.assertEqual(process.returncode, 0, stderr)
+            self.assertEqual(stdout, "")
+            self.assertNotIn("Traceback", stderr)
+            self.assertNotIn("KeyboardInterrupt", stderr)
 
     def test_draft_close_session_prints_reviewed_items_from_packet_progress(self) -> None:
         with TemporaryDirectory() as tmp:

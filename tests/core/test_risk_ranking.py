@@ -62,3 +62,32 @@ class RiskRankingTest(unittest.TestCase):
             [entry.item_id for entry in sorted([medium, low], key=queue_entry_exam_risk_key)],
             ["low", "medium"],
         )
+
+    def test_high_confidence_wrong_sorts_before_low_confidence_wrong_inside_same_priority(self) -> None:
+        low = QueueEntry(
+            item_id="low",
+            block_id="memory",
+            status="R1",
+            priority="high",
+            last_result="wrong",
+            confidence="low",
+            next_review_day=1,
+            next_review_date="2026-05-21",
+            reason="wrong but low confidence",
+        )
+        high = QueueEntry(
+            item_id="high",
+            block_id="memory",
+            status="R1",
+            priority="high",
+            last_result="wrong",
+            confidence="high",
+            next_review_day=1,
+            next_review_date="2026-05-21",
+            reason="overconfident wrong answer",
+        )
+
+        self.assertEqual(
+            [entry.item_id for entry in sorted([low, high], key=queue_entry_exam_risk_key)],
+            ["high", "low"],
+        )

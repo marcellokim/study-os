@@ -1,11 +1,13 @@
 import json
 from http.client import HTTPConnection
 from pathlib import Path
+import queue
 import signal
 import socket
 import subprocess
 import sys
 from tempfile import TemporaryDirectory
+import threading
 import unittest
 from urllib.parse import urlparse
 
@@ -47,7 +49,7 @@ class CliSmokeTest(unittest.TestCase):
         self.assertEqual(response.status, 200, payload)
         self.assertTrue(payload["saved"])
 
-    def _record_packet_progress_through_server(self, workspace: Path) -> None:
+    def _start_packet_server_process(self, workspace: Path) -> tuple[subprocess.Popen, str]:
         process = subprocess.Popen(
             [
                 sys.executable,
@@ -67,8 +69,47 @@ class CliSmokeTest(unittest.TestCase):
             text=True,
         )
         try:
-            server_url = process.stdout.readline().strip() if process.stdout is not None else ""
-            self.assertIn("http://127.0.0.1:", server_url)
+            server_url = self._read_packet_server_url(process)
+        except BaseException:
+            self._stop_packet_server_process(process)
+            raise
+        return process, server_url
+
+    def _read_packet_server_url(self, process: subprocess.Popen) -> str:
+        if process.stdout is None:
+            self.fail("serve-packets stdout was not captured")
+
+        lines: queue.Queue[str] = queue.Queue(maxsize=1)
+
+        def read_line() -> None:
+            lines.put(process.stdout.readline())
+
+        reader = threading.Thread(target=read_line, daemon=True)
+        reader.start()
+        try:
+            server_url = lines.get(timeout=5).strip()
+        except queue.Empty:
+            self.fail("serve-packets did not print a local URL within 5 seconds")
+        reader.join(timeout=1)
+        self.assertIn("http://127.0.0.1:", server_url)
+        return server_url
+
+    def _stop_packet_server_process(self, process: subprocess.Popen) -> None:
+        if process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=5)
+        if process.stdout is not None:
+            process.stdout.close()
+        if process.stderr is not None:
+            process.stderr.close()
+
+    def _record_packet_progress_through_server(self, workspace: Path) -> None:
+        process, server_url = self._start_packet_server_process(workspace)
+        try:
             self._post_progress(
                 server_url,
                 {
@@ -92,16 +133,7 @@ class CliSmokeTest(unittest.TestCase):
                 },
             )
         finally:
-            process.terminate()
-            try:
-                process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait(timeout=5)
-            if process.stdout is not None:
-                process.stdout.close()
-            if process.stderr is not None:
-                process.stderr.close()
+            self._stop_packet_server_process(process)
 
     def test_help_lists_core_commands(self) -> None:
         completed = subprocess.run(
@@ -138,34 +170,11 @@ class CliSmokeTest(unittest.TestCase):
             workspace = Path(tmp) / "workspace"
             self._init_sample_course(workspace)
 
-            process = subprocess.Popen(
-                [
-                    sys.executable,
-                    "-u",
-                    "-m",
-                    "study_os",
-                    "--workspace",
-                    str(workspace),
-                    "serve-packets",
-                    "--course",
-                    "sample-course",
-                    "--port",
-                    "0",
-                ],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-            )
+            process, line = self._start_packet_server_process(workspace)
             try:
-                line = process.stdout.readline().strip() if process.stdout is not None else ""
                 self.assertIn("http://127.0.0.1:", line)
             finally:
-                process.terminate()
-                process.wait(timeout=5)
-                if process.stdout is not None:
-                    process.stdout.close()
-                if process.stderr is not None:
-                    process.stderr.close()
+                self._stop_packet_server_process(process)
 
     def test_serve_packets_unknown_course_fails_cleanly_without_creating_directories(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -233,34 +242,18 @@ class CliSmokeTest(unittest.TestCase):
             workspace = Path(tmp) / "workspace"
             self._init_sample_course(workspace)
 
-            process = subprocess.Popen(
-                [
-                    sys.executable,
-                    "-u",
-                    "-m",
-                    "study_os",
-                    "--workspace",
-                    str(workspace),
-                    "serve-packets",
-                    "--course",
-                    "sample-course",
-                    "--port",
-                    "0",
-                ],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-            )
-            line = process.stdout.readline().strip() if process.stdout is not None else ""
-            self.assertIn("http://127.0.0.1:", line)
-
-            process.send_signal(signal.SIGINT)
+            process: subprocess.Popen | None = None
             try:
-                stdout, stderr = process.communicate(timeout=5)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.communicate(timeout=5)
-                self.fail("serve-packets did not exit after SIGINT")
+                process, _server_url = self._start_packet_server_process(workspace)
+                process.send_signal(signal.SIGINT)
+                try:
+                    stdout, stderr = process.communicate(timeout=5)
+                except subprocess.TimeoutExpired:
+                    self._stop_packet_server_process(process)
+                    self.fail("serve-packets did not exit after SIGINT")
+            finally:
+                if process is not None:
+                    self._stop_packet_server_process(process)
 
             self.assertEqual(process.returncode, 0, stderr)
             self.assertEqual(stdout, "")

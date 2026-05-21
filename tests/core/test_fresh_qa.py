@@ -405,6 +405,35 @@ class FreshQAResultTest(unittest.TestCase):
         self.assertIn("visual_source_connection: WEAK", report)
         self.assertIn("raw/day_03_recall.html", report)
 
+    def test_render_daily_fresh_qa_report_sorts_mixed_type_evidence_keys_safely(self) -> None:
+        result = complete_pass_result()
+        result["evidence"] = {1: "one", "2": "two"}
+
+        report = render_daily_fresh_qa_report([result], today="2026-05-22")
+
+        self.assertIn("- 1: one", report)
+        self.assertIn("- 2: two", report)
+
+    def test_render_daily_fresh_qa_report_serializes_nested_mixed_type_mapping_keys_safely(
+        self,
+    ) -> None:
+        result = complete_pass_result()
+        result["fix_priority"] = {
+            "summary": {1: "one", "b": 2},
+            "axis": "outcome_measurement",
+            "recommended_action": "Inspect nested evidence.",
+        }
+        result["evidence"] = {
+            "nested": {1: "one", "b": 2},
+            "packet_path": "mixed/day_03_recall.html",
+        }
+
+        report = render_daily_fresh_qa_report([result], today="2026-05-22")
+
+        self.assertIn('"1": "one"', report)
+        self.assertIn('"b": 2', report)
+        self.assertIn("mixed/day_03_recall.html", report)
+
 
 if __name__ == "__main__":
     unittest.main()

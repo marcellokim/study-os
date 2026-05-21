@@ -340,7 +340,7 @@ def render_daily_fresh_qa_report(results: list[dict], *, today: str) -> str:
         lines.extend(["", "### evidence"])
         evidence = result["evidence"]
         if evidence:
-            for key in sorted(evidence):
+            for key in sorted(evidence, key=str):
                 lines.append(f"- {key}: {_format_report_value(evidence[key])}")
         else:
             lines.append("- none")
@@ -383,5 +383,13 @@ def _format_packet_checked(result: dict) -> str:
 
 def _format_report_value(value: object) -> str:
     if isinstance(value, Mapping) or isinstance(value, list):
-        return json.dumps(value, ensure_ascii=False, sort_keys=True)
+        return json.dumps(_json_safe_value(value), ensure_ascii=False, sort_keys=True)
     return str(value)
+
+
+def _json_safe_value(value: object) -> object:
+    if isinstance(value, Mapping):
+        return {str(key): _json_safe_value(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_json_safe_value(item) for item in value]
+    return value

@@ -14,6 +14,7 @@ COMMAND_HELP = {
     "init-course": "Write a validated course snapshot from a request file.",
     "start-day": "Generate daily learning and recall packets for a course.",
     "close-session": "Apply a validated session update request.",
+    "draft-close-session": "Build a close-session request draft from saved packet progress.",
     "start-final-recall": "Generate the exam-near final recall pack.",
     "status": "Show a compact course status summary.",
 }
@@ -66,6 +67,19 @@ def build_parser() -> argparse.ArgumentParser:
     close_session_parser = subparsers.add_parser("close-session", help=COMMAND_HELP["close-session"])
     close_session_parser.add_argument("--request-file", required=True)
 
+    draft_close_session_parser = subparsers.add_parser(
+        "draft-close-session",
+        help=COMMAND_HELP["draft-close-session"],
+    )
+    draft_close_session_parser.add_argument("--course", required=True)
+    draft_close_session_parser.add_argument(
+        "--packet-type",
+        required=True,
+        choices=["learning", "recall", "final_recall"],
+    )
+    draft_close_session_parser.add_argument("--day", type=int)
+    draft_close_session_parser.add_argument("--session-date", required=True)
+
     final_recall_parser = subparsers.add_parser("start-final-recall", help=COMMAND_HELP["start-final-recall"])
     final_recall_parser.add_argument("--course", required=True)
     final_recall_parser.add_argument("--today", required=True)
@@ -107,6 +121,16 @@ def main(argv: list[str] | None = None) -> int:
         if parsed.command == "close-session":
             receipt = engine.close_session(_load_request_file(parsed.request_file))
             _print_receipt(receipt, include_close_session_holds=True)
+            return 0
+
+        if parsed.command == "draft-close-session":
+            draft = engine.build_close_session_draft(
+                parsed.course,
+                packet_type=parsed.packet_type,
+                day_index=parsed.day,
+                session_date=parsed.session_date,
+            )
+            print(json.dumps(draft, ensure_ascii=False, indent=2))
             return 0
 
         if parsed.command == "start-final-recall":

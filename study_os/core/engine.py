@@ -5,6 +5,7 @@ from pathlib import Path
 import shutil
 from typing import Any
 
+from study_os.core.close_session_draft import build_close_session_draft
 from study_os.core.constants import STATUS_ORDER
 from study_os.core.models import Block, CourseConfig, ExecutionReceipt, Item, MasteryRecord, QueueEntry, VisualRequirement
 from study_os.core.packet_builder import (
@@ -233,6 +234,33 @@ class StudyEngine:
                 str(recall_file),
             ],
             warnings=[],
+        )
+
+    def build_close_session_draft(
+        self,
+        course_slug: str,
+        *,
+        packet_type: str,
+        day_index: int | None,
+        session_date: str,
+    ) -> dict[str, Any]:
+        validate_course_slug_text(course_slug)
+        validate_iso_date_text(session_date, "session_date")
+
+        paths = build_course_paths(self.workspace_root, course_slug)
+        if not paths.course_file.exists():
+            raise ValidationError(f"unknown course_slug: {course_slug}")
+
+        store = CourseStore(paths)
+        items_by_id = {row["item_id"]: Item(**row) for row in store.load_items()}
+        packet_progress = store.load_packet_progress()
+        return build_close_session_draft(
+            course_slug=course_slug,
+            session_date=session_date,
+            packet_type=packet_type,
+            day_index=day_index,
+            packet_progress=packet_progress,
+            items_by_id=items_by_id,
         )
 
     def close_session(self, payload: dict[str, Any]) -> ExecutionReceipt:

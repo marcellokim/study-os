@@ -21,6 +21,7 @@ class CliSmokeTest(unittest.TestCase):
         self.assertIn("close-session", completed.stdout)
         self.assertIn("start-final-recall", completed.stdout)
         self.assertIn("status", completed.stdout)
+        self.assertIn("draft-close-session", completed.stdout)
 
     def test_empty_invocation_prints_help_and_returns_non_zero(self) -> None:
         completed = subprocess.run(
@@ -34,6 +35,79 @@ class CliSmokeTest(unittest.TestCase):
         self.assertIn("usage:", completed.stdout)
         self.assertIn("init-course", completed.stdout)
         self.assertEqual(completed.stderr, "")
+
+    def test_draft_close_session_prints_reviewed_items_from_packet_progress(self) -> None:
+        with TemporaryDirectory() as tmp:
+            workspace = Path(tmp) / "workspace"
+
+            init_completed = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "study_os",
+                    "--workspace",
+                    str(workspace),
+                    "init-course",
+                    "--request-file",
+                    "examples/sample_init_request.json",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(init_completed.returncode, 0, init_completed.stderr)
+
+            packet_progress_file = workspace / "courses" / "sample-course" / "state" / "packet_progress.yaml"
+            packet_progress_file.write_text(
+                json.dumps(
+                    {
+                        "learning:day:1": {
+                            "scope_keywords": {
+                                "checked": True,
+                                "draft_answer": "Missed one scope keyword.",
+                                "result": "partial",
+                                "confidence_score": 2,
+                                "blocker_type": "memory",
+                            }
+                        }
+                    },
+                    indent=2,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "study_os",
+                    "--workspace",
+                    str(workspace),
+                    "draft-close-session",
+                    "--course",
+                    "sample-course",
+                    "--packet-type",
+                    "learning",
+                    "--day",
+                    "1",
+                    "--session-date",
+                    "2026-05-21",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            payload = json.loads(completed.stdout)
+            self.assertEqual(payload["course_slug"], "sample-course")
+            self.assertEqual(payload["session_date"], "2026-05-21")
+            self.assertEqual(payload["day_index"], 1)
+            self.assertEqual(payload["reviewed_items"][0]["item_id"], "scope_keywords")
+            self.assertEqual(payload["reviewed_items"][0]["confidence"], "low")
+            self.assertEqual(payload["reviewed_items"][0]["result"], "partial")
+            self.assertEqual(payload["next_focus"], ["scope_keywords"])
 
     def test_init_course_command_writes_requested_artifacts(self) -> None:
         request = {

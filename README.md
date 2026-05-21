@@ -10,8 +10,11 @@ It is designed for exam preparation workflows where private course material shou
 - Writes canonical course state under `courses/<course_slug>/state/`.
 - Generates daily learning and recall packets.
 - Tracks mastery states from session results.
+- Saves per-item draft answers, self-check results, 1-5 confidence scores, blocker types, and checkbox progress immediately without changing mastery state.
 - Builds priority review queues using difficulty, importance, mistakes, confidence, exam proximity, and visual-material blockers.
 - Produces a final recall pack near the exam.
+- Serves local packet visuals from the course source tree without copying private assets into the engine repository.
+- Builds close-session request drafts from saved in-packet progress.
 - Validates local source files without copying private PDFs, transcripts, notes, or images into this repository.
 
 ## Tech Stack
@@ -110,8 +113,35 @@ Available commands:
 - `init-course` - validate a course request and write canonical course state.
 - `start-day` - create daily learning and recall markdown packets.
 - `close-session` - apply reviewed item results and rebuild the review queue.
+- `draft-close-session` - print a JSON close-session request draft from saved packet progress.
 - `start-final-recall` - create the final recall pack.
 - `status` - print tracked item and queue counts.
+
+
+## HTML Packet Workflow
+
+When using generated HTML packets through the local packet server, work inside each item before closing the session:
+
+- Write the draft answer.
+- Mark the self-check result as `correct`, `partial`, `wrong`, or `uncertain`.
+- Set confidence from 1 to 5.
+- Mark a blocker type when the miss has a clear cause.
+
+Packet progress is stored in `state/packet_progress.yaml` as execution progress only. Local visual assets are served from the course `sources/` tree, so diagrams can be checked in the browser without copying private source assets into this repository. Mastery state still changes only through `close-session`.
+
+After packet work, draft a close-session request from saved in-packet progress:
+
+```bash
+python3 -m study_os \
+  --workspace /Users/<you>/Documents/study-workspace \
+  draft-close-session \
+  --course operating-systems-midterm \
+  --packet-type learning \
+  --day 1 \
+  --session-date 2026-05-21
+```
+
+Review the JSON, then pass the edited request to `close-session`. The draft command itself does not change mastery, queues, or session history.
 
 ## Working With Real Course Sources
 

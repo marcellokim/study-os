@@ -214,8 +214,8 @@ def _require_string_list(value: object, field_name: str) -> None:
 
 
 def _validate_axis_scorecard(axis_scorecard: dict) -> None:
-    if not isinstance(axis_scorecard, dict):
-        raise ValueError("bad axis_scorecard: expected dict")
+    if not isinstance(axis_scorecard, Mapping):
+        raise ValueError("bad axis_scorecard: expected mapping")
     expected_axes = set(FRESH_QA_AXES)
     actual_axes = set(axis_scorecard)
     for axis in sorted(actual_axes - expected_axes):

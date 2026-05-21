@@ -1,3 +1,4 @@
+from collections import UserDict
 import re
 import unittest
 
@@ -57,6 +58,15 @@ class FreshQAResultTest(unittest.TestCase):
         self.assertEqual("block", result["gate"])
         self.assertEqual("pass", result["computed_gate"])
         self.assertEqual("negative", result["predicted_answer_rate_effect"])
+
+    def test_accepts_mapping_axis_scorecard(self) -> None:
+        payload = complete_pass_result()
+        payload["axis_scorecard"] = UserDict({axis: "OK" for axis in FRESH_QA_AXES})
+
+        result = normalize_fresh_qa_result(payload)
+
+        self.assertEqual("pass", result["computed_gate"])
+        self.assertEqual("positive", result["predicted_answer_rate_effect"])
 
     def test_rejects_missing_phase2_grading(self) -> None:
         payload = complete_pass_result()

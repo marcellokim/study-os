@@ -71,6 +71,20 @@ def _load_fresh_qa_results(path: str) -> list[dict[str, Any]]:
     return results
 
 
+def _fresh_qa_context_for_phase(context: dict[str, Any], phase: str) -> dict[str, Any]:
+    if phase == "all":
+        return context
+    filtered = dict(context)
+    if phase == "phase1":
+        filtered.pop("phase2_context", None)
+    elif phase == "phase2":
+        filtered.pop("phase1_context", None)
+    else:
+        raise ValidationError(f"unknown fresh QA phase: {phase}")
+    filtered["context_phase"] = phase
+    return filtered
+
+
 def _print_receipt(receipt: Any, *, include_close_session_holds: bool = False) -> None:
     print(receipt.status)
     if include_close_session_holds:
@@ -140,6 +154,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     fresh_qa_context_parser.add_argument("--today", required=True)
     fresh_qa_context_parser.add_argument("--course")
+    fresh_qa_context_parser.add_argument(
+        "--phase",
+        choices=["phase1", "phase2", "all"],
+        default="phase1",
+        help="Print only the learner-visible Phase 1 context by default; use all only for trusted orchestration.",
+    )
 
     fresh_qa_report_parser = subparsers.add_parser(
         "fresh-qa-report",
@@ -147,6 +167,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     fresh_qa_report_parser.add_argument("--result-file", required=True)
     fresh_qa_report_parser.add_argument("--today", required=True)
+    fresh_qa_report_parser.add_argument(
+        "--expected-course",
+        action="append",
+        default=[],
+        help="Require one fresh QA result for this course. Defaults to active courses in --workspace when present.",
+    )
 
     return parser
 
@@ -229,7 +255,10 @@ def main(argv: list[str] | None = None) -> int:
         if parsed.command == "fresh-qa-context":
             course_slugs = [parsed.course] if parsed.course else engine.list_active_course_slugs()
             contexts = [
-                engine.build_fresh_qa_context(course_slug, today=parsed.today)
+                _fresh_qa_context_for_phase(
+                    engine.build_fresh_qa_context(course_slug, today=parsed.today),
+                    parsed.phase,
+                )
                 for course_slug in course_slugs
             ]
             print(json.dumps({"today": parsed.today, "courses": contexts}, ensure_ascii=False, indent=2))
@@ -237,7 +266,16 @@ def main(argv: list[str] | None = None) -> int:
 
         if parsed.command == "fresh-qa-report":
             results = _load_fresh_qa_results(parsed.result_file)
-            sys.stdout.write(render_daily_fresh_qa_report(results, today=parsed.today))
+            expected_course_slugs = parsed.expected_course or engine.list_active_course_slugs()
+            if not expected_course_slugs:
+                expected_course_slugs = None
+            sys.stdout.write(
+                render_daily_fresh_qa_report(
+                    results,
+                    today=parsed.today,
+                    expected_course_slugs=expected_course_slugs,
+                )
+            )
             return 0
     except (ValidationError, ValueError) as exc:
         print(f"error: {exc}", file=sys.stderr)

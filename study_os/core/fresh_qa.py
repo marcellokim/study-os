@@ -19,6 +19,7 @@ AXIS_VALUES = ("OK", "WEAK", "BLOCKED", "NOT_CHECKED")
 GATES = ("pass", "warn", "block")
 FAILURE_TYPES = ("subagent_failed", "packet_blocked", "grading_blocked", "learning_weak", "pass")
 GRADING_RESULTS = ("correct", "partial", "wrong", "uncertain")
+PACKET_TYPES = ("learning", "recall", "final_recall")
 FAILURE_SOURCES = (
     "none",
     "packet",
@@ -106,7 +107,9 @@ def normalize_fresh_qa_result(payload: dict) -> dict:
     _validate_top_level_fields(normalized)
     _validate_phase1_attempts(normalized["phase1_attempts"])
     _validate_phase2_grading(normalized["phase2_grading"])
+    _validate_phase_contract(normalized["phase1_attempts"], normalized["phase2_grading"])
     _validate_axis_scorecard(normalized["axis_scorecard"])
+    _validate_fix_priority(normalized["fix_priority"])
     normalized["next_action"] = _normalize_container(normalized["next_action"])
     normalized["fix_priority"] = _normalize_container(normalized["fix_priority"])
     normalized["evidence"] = _normalize_container(normalized["evidence"])
@@ -164,6 +167,8 @@ def _axis_driven_gate_for(axis_scorecard: dict) -> str:
 def _validate_top_level_fields(payload: Mapping) -> None:
     _require_non_empty_string(payload["course_slug"], "course_slug")
     _require_non_empty_string(payload["packet_type"], "packet_type")
+    if payload["packet_type"] not in PACKET_TYPES:
+        raise ValueError(f"bad packet_type: {payload['packet_type']}")
     _require_positive_int_or_none(payload["day_index"], "day_index")
     _require_mapping(payload["next_action"], "next_action")
     _require_non_empty_string(
@@ -225,6 +230,66 @@ def _validate_phase2_grading(entries: list) -> None:
             raise ValueError(f"bad failure_source: {failure_source}")
 
 
+def _validate_phase_contract(attempts: list[dict], entries: list[dict]) -> None:
+    attempts_by_id: dict[str, dict] = {}
+    for index, attempt in enumerate(attempts):
+        item_id = attempt["item_id"]
+        if item_id in attempts_by_id:
+            raise ValueError(f"duplicate phase1 attempt item_id: {item_id}")
+        attempts_by_id[item_id] = attempt
+
+    for index, entry in enumerate(entries):
+        item_id = entry["item_id"]
+        attempt = attempts_by_id.get(item_id)
+        if attempt is None:
+            raise ValueError(f"phase2 item without phase1 attempt: {item_id}")
+
+        if entry["result"] == "correct":
+            if (
+                not attempt["answerable_from_packet"]
+                or not attempt["answer_first_supported"]
+                or not entry["self_grading_supported"]
+                or not entry["source_connection_supported"]
+                or entry["failure_source"] != "none"
+            ):
+                raise ValueError(
+                    f"inconsistent phase2_grading[{index}]: correct requires packet, "
+                    "answer-first, self-grading, source support, and failure_source=none"
+                )
+            continue
+
+        if entry["failure_source"] == "none":
+            raise ValueError(
+                f"inconsistent phase2_grading[{index}]: non-correct result requires failure_source"
+            )
+
+        if not attempt["answerable_from_packet"] and entry["failure_source"] not in {
+            "packet",
+            "visual_asset",
+            "source_connection",
+        }:
+            raise ValueError(
+                f"inconsistent phase2_grading[{index}]: unanswerable packet needs packet-linked failure_source"
+            )
+
+        if not entry["self_grading_supported"] and entry["failure_source"] not in {
+            "rubric",
+            "source_connection",
+            "visual_asset",
+        }:
+            raise ValueError(
+                f"inconsistent phase2_grading[{index}]: unsupported self-grading needs grading-linked failure_source"
+            )
+
+        if not entry["source_connection_supported"] and entry["failure_source"] not in {
+            "source_connection",
+            "visual_asset",
+        }:
+            raise ValueError(
+                f"inconsistent phase2_grading[{index}]: unsupported source connection needs source-linked failure_source"
+            )
+
+
 def _require_mapping(value: object, field_name: str) -> Mapping:
     if not isinstance(value, Mapping):
         raise ValueError(f"bad {field_name}: expected mapping")
@@ -279,6 +344,14 @@ def _validate_axis_scorecard(axis_scorecard: dict) -> None:
             raise ValueError(f"bad axis value: {axis}={value}")
 
 
+def _validate_fix_priority(fix_priority: Mapping) -> None:
+    axis = fix_priority.get("axis")
+    if axis is None:
+        return
+    if not isinstance(axis, str) or axis not in FRESH_QA_AXES:
+        raise ValueError(f"bad fix_priority.axis: {axis}")
+
+
 def select_global_fix_priority(results: list[dict]) -> dict:
     if not results:
         return {
@@ -305,8 +378,14 @@ def select_global_fix_priority(results: list[dict]) -> dict:
     }
 
 
-def render_daily_fresh_qa_report(results: list[dict], *, today: str) -> str:
+def render_daily_fresh_qa_report(
+    results: list[dict],
+    *,
+    today: str,
+    expected_course_slugs: list[str] | None = None,
+) -> str:
     normalized_results = [normalize_fresh_qa_result(result) for result in results]
+    _validate_expected_course_results(normalized_results, expected_course_slugs)
     global_priority = select_global_fix_priority(normalized_results)
     lines = [
         f"# Daily Fresh QA - {today}",
@@ -347,6 +426,28 @@ def render_daily_fresh_qa_report(results: list[dict], *, today: str) -> str:
         lines.append("")
 
     return "\n".join(lines).rstrip() + "\n"
+
+
+def _validate_expected_course_results(
+    results: list[dict],
+    expected_course_slugs: list[str] | None,
+) -> None:
+    if expected_course_slugs is None:
+        return
+
+    expected = set(expected_course_slugs)
+    actual = [result["course_slug"] for result in results]
+    actual_set = set(actual)
+    if len(actual) != len(actual_set):
+        raise ValueError("duplicate fresh QA result course_slug")
+
+    missing = sorted(expected - actual_set)
+    if missing:
+        raise ValueError(f"missing fresh QA result for course: {missing[0]}")
+
+    unexpected = sorted(actual_set - expected)
+    if unexpected:
+        raise ValueError(f"unexpected fresh QA result for course: {unexpected[0]}")
 
 
 def _global_fix_priority_sort_key(result: dict) -> tuple:

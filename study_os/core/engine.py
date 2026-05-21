@@ -421,9 +421,15 @@ class StudyEngine:
             packet_type=packet_type,
             day_index=day_index,
         )
-        packet_item_ids, html_openable = _packet_item_ids_from_html(html_path)
+        items_by_id = {item.item_id: item for item in items}
+        parsed_html_item_ids, html_openable = _packet_item_ids_from_html(html_path)
+        unknown_packet_item_ids = [
+            item_id
+            for item_id in (parsed_html_item_ids or [])
+            if item_id not in items_by_id
+        ]
         packet_exists = html_path.exists() or markdown_path.exists()
-        packet_openable = html_path.is_file() and html_openable
+        packet_openable = html_path.is_file() and html_openable and not unknown_packet_item_ids
         selected_packet = {
             "packet_type": packet_type,
             "day_index": day_index,
@@ -434,11 +440,14 @@ class StudyEngine:
             "openable": packet_openable,
         }
 
-        parsed_packet_item_ids = packet_item_ids if packet_openable and packet_item_ids is not None else []
+        parsed_packet_item_ids = (
+            parsed_html_item_ids
+            if packet_openable and parsed_html_item_ids is not None
+            else []
+        )
         packet_item_ids = parsed_packet_item_ids[: inspection_budget["max_items"]]
         phase2_item_ids = parsed_packet_item_ids[: inspection_budget["max_items"]]
 
-        items_by_id = {item.item_id: item for item in items}
         phase1_items = [
             items_by_id[item_id]
             for item_id in packet_item_ids

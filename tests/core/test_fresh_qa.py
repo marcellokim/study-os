@@ -122,7 +122,9 @@ class FreshQAResultTest(unittest.TestCase):
     def test_grading_blocked_requires_block_when_self_grading_impossible(self) -> None:
         payload = complete_pass_result()
         payload["failure_type"] = "grading_blocked"
+        payload["phase2_grading"][0]["result"] = "uncertain"
         payload["phase2_grading"][0]["self_grading_supported"] = False
+        payload["phase2_grading"][0]["failure_source"] = "rubric"
         payload["gate"] = "warn"
 
         with self.assertRaisesRegex(ValueError, "weaker gate"):
@@ -193,6 +195,7 @@ class FreshQAResultTest(unittest.TestCase):
         invalid_cases = [
             ("course_slug", None, "bad course_slug"),
             ("packet_type", 3, "bad packet_type"),
+            ("packet_type", "quiz", "bad packet_type"),
             ("day_index", True, "bad day_index"),
             ("day_index", 0, "bad day_index"),
             ("next_action", [], "bad next_action"),
@@ -208,6 +211,17 @@ class FreshQAResultTest(unittest.TestCase):
 
                 with self.assertRaisesRegex(ValueError, message):
                     normalize_fresh_qa_result(payload)
+
+    def test_rejects_invalid_fix_priority_axis(self) -> None:
+        payload = complete_pass_result()
+        payload["fix_priority"] = {
+            "summary": "Repair the packet.",
+            "axis": "visuals",
+            "recommended_action": "Use a valid 9-axis key.",
+        }
+
+        with self.assertRaisesRegex(ValueError, "bad fix_priority.axis"):
+            normalize_fresh_qa_result(payload)
 
     def test_rejects_invalid_axis_value(self) -> None:
         payload = complete_pass_result()
@@ -301,6 +315,44 @@ class FreshQAResultTest(unittest.TestCase):
 
                 with self.assertRaisesRegex(ValueError, re.escape(message)):
                     normalize_fresh_qa_result(payload)
+
+    def test_rejects_phase2_item_without_matching_phase1_attempt(self) -> None:
+        payload = complete_pass_result()
+        payload["phase2_grading"][0]["item_id"] = "not_attempted"
+
+        with self.assertRaisesRegex(ValueError, "phase2 item without phase1 attempt"):
+            normalize_fresh_qa_result(payload)
+
+    def test_rejects_correct_result_when_packet_or_grading_support_is_missing(self) -> None:
+        payload = complete_pass_result()
+        payload["phase1_attempts"][0]["answerable_from_packet"] = False
+        payload["phase1_attempts"][0]["answer_first_supported"] = False
+        payload["phase1_attempts"][0]["visible_blockers"] = ["required diagram was not visible"]
+        payload["phase2_grading"][0]["result"] = "correct"
+        payload["phase2_grading"][0]["self_grading_supported"] = False
+        payload["phase2_grading"][0]["source_connection_supported"] = False
+        payload["phase2_grading"][0]["failure_source"] = "none"
+
+        with self.assertRaisesRegex(ValueError, "inconsistent phase2_grading"):
+            normalize_fresh_qa_result(payload)
+
+    def test_accepts_visual_asset_failure_when_self_grading_and_source_are_blocked(self) -> None:
+        payload = complete_pass_result()
+        payload["failure_type"] = "grading_blocked"
+        payload["phase1_attempts"][0]["answerable_from_packet"] = False
+        payload["phase1_attempts"][0]["answer_first_supported"] = False
+        payload["phase1_attempts"][0]["visible_blockers"] = ["required visual was missing"]
+        payload["phase2_grading"][0]["result"] = "uncertain"
+        payload["phase2_grading"][0]["self_grading_supported"] = False
+        payload["phase2_grading"][0]["source_connection_supported"] = False
+        payload["phase2_grading"][0]["failure_source"] = "visual_asset"
+        payload["axis_scorecard"]["visual_source_connection"] = "BLOCKED"
+        payload["axis_scorecard"]["pdf_visual_intake"] = "BLOCKED"
+        payload["gate"] = "block"
+
+        result = normalize_fresh_qa_result(payload)
+
+        self.assertEqual("block", result["computed_gate"])
 
     def test_select_global_fix_priority_prefers_block_over_warn(self) -> None:
         warn_result = complete_pass_result()
@@ -404,6 +456,14 @@ class FreshQAResultTest(unittest.TestCase):
         self.assertIn("## raw-mapping-course", report)
         self.assertIn("visual_source_connection: WEAK", report)
         self.assertIn("raw/day_03_recall.html", report)
+
+    def test_render_daily_fresh_qa_report_rejects_missing_expected_course(self) -> None:
+        with self.assertRaisesRegex(ValueError, "missing fresh QA result"):
+            render_daily_fresh_qa_report(
+                [complete_pass_result()],
+                today="2026-05-22",
+                expected_course_slugs=["software-engineering-midterm-testflight", "basic-computer-programming-final"],
+            )
 
     def test_render_daily_fresh_qa_report_sorts_mixed_type_evidence_keys_safely(self) -> None:
         result = complete_pass_result()

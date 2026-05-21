@@ -367,6 +367,7 @@ class CliSmokeTest(unittest.TestCase):
             self.assertEqual(len(payload["courses"]), 1)
             self.assertEqual(payload["courses"][0]["course_slug"], "sample-course")
             self.assertIn("phase1_context", payload["courses"][0])
+            self.assertNotIn("phase2_context", payload["courses"][0])
 
     def test_fresh_qa_context_outputs_single_requested_course(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -414,6 +415,53 @@ class CliSmokeTest(unittest.TestCase):
             payload = json.loads(completed.stdout)
             self.assertEqual([course["course_slug"] for course in payload["courses"]], ["sample-course"])
 
+    def test_fresh_qa_context_phase_all_includes_phase2_for_trusted_orchestration(self) -> None:
+        with TemporaryDirectory() as tmp:
+            workspace = Path(tmp) / "workspace"
+            self._init_sample_course(workspace)
+            subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "study_os",
+                    "--workspace",
+                    str(workspace),
+                    "start-day",
+                    "--course",
+                    "sample-course",
+                    "--day",
+                    "1",
+                    "--today",
+                    "2026-05-22",
+                ],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "study_os",
+                    "--workspace",
+                    str(workspace),
+                    "fresh-qa-context",
+                    "--today",
+                    "2026-05-22",
+                    "--phase",
+                    "all",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            payload = json.loads(completed.stdout)
+            self.assertIn("phase1_context", payload["courses"][0])
+            self.assertIn("phase2_context", payload["courses"][0])
+
     def test_fresh_qa_report_renders_valid_result_json(self) -> None:
         with TemporaryDirectory() as tmp:
             result_file = Path(tmp) / "fresh-qa-result.json"
@@ -439,6 +487,38 @@ class CliSmokeTest(unittest.TestCase):
             self.assertIn("# Daily Fresh QA - 2026-05-22", completed.stdout)
             self.assertIn("## sample-course", completed.stdout)
             self.assertIn("정답률 영향: positive", completed.stdout)
+
+    def test_fresh_qa_report_rejects_missing_active_workspace_course_result(self) -> None:
+        with TemporaryDirectory() as tmp:
+            workspace = Path(tmp) / "workspace"
+            self._init_sample_course(workspace)
+            result = self._complete_fresh_qa_result()
+            result["course_slug"] = "other-course"
+            result_file = Path(tmp) / "fresh-qa-result.json"
+            result_file.write_text(json.dumps(result), encoding="utf-8")
+
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "study_os",
+                    "--workspace",
+                    str(workspace),
+                    "fresh-qa-report",
+                    "--result-file",
+                    str(result_file),
+                    "--today",
+                    "2026-05-22",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(completed.returncode, 2)
+            self.assertEqual(completed.stdout, "")
+            self.assertIn("missing fresh QA result for course: sample-course", completed.stderr)
+            self.assertNotIn("Traceback", completed.stderr)
 
     def test_fresh_qa_report_missing_file_fails_cleanly_without_traceback(self) -> None:
         with TemporaryDirectory() as tmp:

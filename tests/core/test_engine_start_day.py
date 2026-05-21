@@ -150,6 +150,35 @@ class StartDayWorkflowTest(unittest.TestCase):
             self.assertIn("include_vs_extend", day_two.applied_items)
             self.assertIn("Explain include vs extend.", recall_file.read_text(encoding="utf-8"))
 
+    def test_start_day_includes_review_due_by_calendar_date_even_when_day_index_is_future(self) -> None:
+        with TemporaryDirectory() as tmp:
+            engine = StudyEngine(Path(tmp))
+            engine.initialize_course(self._course_payload(visual_requirements=[]))
+
+            paths = build_course_paths(Path(tmp), "operating-systems-midterm")
+            store = CourseStore(paths)
+            store.save_review_queue(
+                [
+                    {
+                        "item_id": "include_vs_extend",
+                        "block_id": "use_case_diagram",
+                        "status": "R0",
+                        "priority": "urgent",
+                        "last_result": "wrong",
+                        "confidence": "high",
+                        "next_review_day": 13,
+                        "next_review_date": "2026-05-21",
+                        "reason": "exam near",
+                    }
+                ]
+            )
+
+            receipt = engine.start_day("operating-systems-midterm", day_index=12, today="2026-05-21")
+
+            recall_file = paths.daily_dir / "day_12_recall.md"
+            self.assertIn("include_vs_extend", receipt.applied_items)
+            self.assertIn("Explain include vs extend.", recall_file.read_text(encoding="utf-8"))
+
     def test_start_day_advances_new_block_selection_across_days(self) -> None:
         with TemporaryDirectory() as tmp:
             engine = StudyEngine(Path(tmp))

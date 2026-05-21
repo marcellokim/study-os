@@ -71,6 +71,14 @@ def _daily_packet_links(day_index: int) -> dict[str, str]:
     }
 
 
+def _review_entry_is_due(entry: QueueEntry, *, day_index: int, today: str) -> bool:
+    if entry.next_review_day is None or entry.next_review_day <= day_index:
+        return True
+    if entry.next_review_date is not None and entry.next_review_date <= today:
+        return True
+    return False
+
+
 class StudyEngine:
     def __init__(self, workspace_root: Path) -> None:
         self.workspace_root = workspace_root
@@ -152,7 +160,7 @@ class StudyEngine:
         start_index = max(day_index - 1, 0) * _NEW_BLOCKS_PER_DAY
         selected_blocks = sorted_blocks[start_index:start_index + _NEW_BLOCKS_PER_DAY]
         due_review_entries = [
-            entry for entry in review_queue if entry.next_review_day is None or entry.next_review_day <= day_index
+            entry for entry in review_queue if _review_entry_is_due(entry, day_index=day_index, today=today)
         ]
 
         selected_block_ids = {block.block_id for block in selected_blocks}

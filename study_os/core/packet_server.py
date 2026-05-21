@@ -335,6 +335,22 @@ class PacketServer:
         if segments == ["packets", "final-recall"]:
             return self.paths.final_recall_html_file
 
+        if len(segments) == 5 and segments[:2] == ["fresh-qa", "phase1"] and segments[3] == "day":
+            packet_type = segments[2].replace("-", "_")
+            try:
+                day_index = int(segments[4])
+            except ValueError:
+                return None
+            if day_index <= 0:
+                return None
+            try:
+                return self.paths.fresh_qa_phase1_html_file(
+                    day_index=day_index,
+                    packet_type=packet_type,
+                )
+            except ValueError:
+                return None
+
         if len(segments) != 4 or segments[0] != "packets" or segments[2] != "day":
             return None
 

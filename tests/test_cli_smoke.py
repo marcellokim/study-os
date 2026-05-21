@@ -11,8 +11,45 @@ import threading
 import unittest
 from urllib.parse import urlparse
 
+from study_os.core.fresh_qa import FRESH_QA_AXES
+
 
 class CliSmokeTest(unittest.TestCase):
+    def _complete_fresh_qa_result(self) -> dict[str, object]:
+        return {
+            "course_slug": "sample-course",
+            "packet_type": "learning",
+            "day_index": 1,
+            "next_action": {"type": "keep_current_packet"},
+            "failure_type": "pass",
+            "phase1_attempts": [
+                {
+                    "item_id": "scope_keywords",
+                    "answerable_from_packet": True,
+                    "draft_answer": "List the exam-scope keywords.",
+                    "confidence_score": 4,
+                    "visible_blockers": [],
+                    "answer_first_supported": True,
+                }
+            ],
+            "phase2_grading": [
+                {
+                    "item_id": "scope_keywords",
+                    "result": "correct",
+                    "grading_rationale": "The answer covers the packet prompt.",
+                    "self_grading_supported": True,
+                    "source_connection_supported": True,
+                    "exam_plausibility": "high",
+                    "failure_source": "none",
+                }
+            ],
+            "axis_scorecard": {axis: "OK" for axis in FRESH_QA_AXES},
+            "highest_answer_rate_blocker": "none",
+            "fix_priority": {},
+            "gate": "pass",
+            "evidence": {"packet_path": "outputs/daily/day_01_learning.html"},
+        }
+
     def _init_sample_course(self, workspace: Path) -> None:
         completed = subprocess.run(
             [
@@ -172,6 +209,8 @@ class CliSmokeTest(unittest.TestCase):
         self.assertIn("status", completed.stdout)
         self.assertIn("serve-packets", completed.stdout)
         self.assertIn("draft-close-session", completed.stdout)
+        self.assertIn("fresh-qa-context", completed.stdout)
+        self.assertIn("fresh-qa-report", completed.stdout)
 
     def test_empty_invocation_prints_help_and_returns_non_zero(self) -> None:
         completed = subprocess.run(
@@ -280,6 +319,285 @@ class CliSmokeTest(unittest.TestCase):
             self.assertEqual(stdout, "")
             self.assertNotIn("Traceback", stderr)
             self.assertNotIn("KeyboardInterrupt", stderr)
+
+    def test_fresh_qa_context_outputs_all_active_course_contexts(self) -> None:
+        with TemporaryDirectory() as tmp:
+            workspace = Path(tmp) / "workspace"
+            self._init_sample_course(workspace)
+            started = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "study_os",
+                    "--workspace",
+                    str(workspace),
+                    "start-day",
+                    "--course",
+                    "sample-course",
+                    "--day",
+                    "1",
+                    "--today",
+                    "2026-05-22",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(started.returncode, 0, started.stderr)
+
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "study_os",
+                    "--workspace",
+                    str(workspace),
+                    "fresh-qa-context",
+                    "--today",
+                    "2026-05-22",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            payload = json.loads(completed.stdout)
+            self.assertEqual(payload["today"], "2026-05-22")
+            self.assertEqual(len(payload["courses"]), 1)
+            self.assertEqual(payload["courses"][0]["course_slug"], "sample-course")
+            course_context = payload["courses"][0]
+            self.assertIn("phase1_context", course_context)
+            self.assertNotIn("phase2_context", course_context)
+            selected_packet = course_context["selected_packet"]
+            self.assertEqual(selected_packet["url_path"], "/fresh-qa/phase1/learning/day/1")
+            self.assertTrue(selected_packet["html_path"].endswith("day_01_learning_phase1.html"))
+            self.assertNotIn("markdown_path", selected_packet)
+            self.assertNotIn("day_01_learning.html", json.dumps(course_context))
+
+    def test_fresh_qa_context_outputs_single_requested_course(self) -> None:
+        with TemporaryDirectory() as tmp:
+            workspace = Path(tmp) / "workspace"
+            self._init_sample_course(workspace)
+            subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "study_os",
+                    "--workspace",
+                    str(workspace),
+                    "start-day",
+                    "--course",
+                    "sample-course",
+                    "--day",
+                    "1",
+                    "--today",
+                    "2026-05-22",
+                ],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "study_os",
+                    "--workspace",
+                    str(workspace),
+                    "fresh-qa-context",
+                    "--today",
+                    "2026-05-22",
+                    "--course",
+                    "sample-course",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            payload = json.loads(completed.stdout)
+            self.assertEqual([course["course_slug"] for course in payload["courses"]], ["sample-course"])
+
+    def test_fresh_qa_context_phase_all_includes_phase2_for_trusted_orchestration(self) -> None:
+        with TemporaryDirectory() as tmp:
+            workspace = Path(tmp) / "workspace"
+            self._init_sample_course(workspace)
+            subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "study_os",
+                    "--workspace",
+                    str(workspace),
+                    "start-day",
+                    "--course",
+                    "sample-course",
+                    "--day",
+                    "1",
+                    "--today",
+                    "2026-05-22",
+                ],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "study_os",
+                    "--workspace",
+                    str(workspace),
+                    "fresh-qa-context",
+                    "--today",
+                    "2026-05-22",
+                    "--phase",
+                    "all",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            payload = json.loads(completed.stdout)
+            self.assertIn("phase1_context", payload["courses"][0])
+            self.assertIn("phase2_context", payload["courses"][0])
+
+    def test_fresh_qa_context_rejects_phase2_only_output(self) -> None:
+        completed = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "study_os",
+                "fresh-qa-context",
+                "--today",
+                "2026-05-22",
+                "--phase",
+                "phase2",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(completed.returncode, 2)
+        self.assertIn("invalid choice", completed.stderr)
+
+    def test_fresh_qa_report_renders_valid_result_json(self) -> None:
+        with TemporaryDirectory() as tmp:
+            result_file = Path(tmp) / "fresh-qa-result.json"
+            result_file.write_text(json.dumps(self._complete_fresh_qa_result()), encoding="utf-8")
+
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "study_os",
+                    "fresh-qa-report",
+                    "--result-file",
+                    str(result_file),
+                    "--today",
+                    "2026-05-22",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertIn("# Daily Fresh QA - 2026-05-22", completed.stdout)
+            self.assertIn("## sample-course", completed.stdout)
+            self.assertIn("정답률 영향: positive", completed.stdout)
+
+    def test_fresh_qa_report_rejects_missing_active_workspace_course_result(self) -> None:
+        with TemporaryDirectory() as tmp:
+            workspace = Path(tmp) / "workspace"
+            self._init_sample_course(workspace)
+            result = self._complete_fresh_qa_result()
+            result["course_slug"] = "other-course"
+            result_file = Path(tmp) / "fresh-qa-result.json"
+            result_file.write_text(json.dumps(result), encoding="utf-8")
+
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "study_os",
+                    "--workspace",
+                    str(workspace),
+                    "fresh-qa-report",
+                    "--result-file",
+                    str(result_file),
+                    "--today",
+                    "2026-05-22",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(completed.returncode, 2)
+            self.assertEqual(completed.stdout, "")
+            self.assertIn("missing fresh QA result for course: sample-course", completed.stderr)
+            self.assertNotIn("Traceback", completed.stderr)
+
+    def test_fresh_qa_report_missing_file_fails_cleanly_without_traceback(self) -> None:
+        with TemporaryDirectory() as tmp:
+            missing_result = Path(tmp) / "missing.json"
+
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "study_os",
+                    "fresh-qa-report",
+                    "--result-file",
+                    str(missing_result),
+                    "--today",
+                    "2026-05-22",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(completed.returncode, 2)
+            self.assertEqual(completed.stdout, "")
+            self.assertIn("error: fresh QA result file not found:", completed.stderr)
+            self.assertIn(str(missing_result), completed.stderr)
+            self.assertNotIn("Traceback", completed.stderr)
+
+    def test_fresh_qa_report_invalid_json_fails_cleanly_without_traceback(self) -> None:
+        with TemporaryDirectory() as tmp:
+            result_file = Path(tmp) / "fresh-qa-result.json"
+            result_file.write_text('{"results": ', encoding="utf-8")
+
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "study_os",
+                    "fresh-qa-report",
+                    "--result-file",
+                    str(result_file),
+                    "--today",
+                    "2026-05-22",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(completed.returncode, 2)
+            self.assertEqual(completed.stdout, "")
+            self.assertIn("error: fresh QA result file is not valid JSON:", completed.stderr)
+            self.assertIn(str(result_file), completed.stderr)
+            self.assertNotIn("Traceback", completed.stderr)
 
     def test_draft_close_session_prints_reviewed_items_from_packet_progress(self) -> None:
         with TemporaryDirectory() as tmp:

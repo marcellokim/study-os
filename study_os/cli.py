@@ -7,6 +7,7 @@ import sys
 from typing import Any
 
 from study_os.core.engine import StudyEngine
+from study_os.core.fresh_qa import render_daily_fresh_qa_report
 from study_os.core.packet_server import PacketServer, validate_close_session_draft_params
 from study_os.core.paths import build_course_paths
 from study_os.core.validation import ValidationError, validate_course_slug_text
@@ -20,6 +21,8 @@ COMMAND_HELP = {
     "start-final-recall": "Generate the exam-near final recall pack.",
     "status": "Show a compact course status summary.",
     "serve-packets": "Serve HTML packets and immediate packet-progress writes for a course.",
+    "fresh-qa-context": "Print next-packet context for daily fresh black-box QA.",
+    "fresh-qa-report": "Validate fresh QA result JSON and render a Korean daily report.",
 }
 
 
@@ -36,6 +39,58 @@ def _load_request_file(path: str) -> dict[str, Any]:
         return json.loads(raw_text)
     except json.JSONDecodeError as exc:
         raise ValidationError(f"request file is not valid JSON: {request_path}") from exc
+
+
+def _load_fresh_qa_results(path: str) -> list[dict[str, Any]]:
+    result_path = Path(path)
+    try:
+        raw_text = result_path.read_text(encoding="utf-8")
+    except FileNotFoundError as exc:
+        raise ValidationError(f"fresh QA result file not found: {result_path}") from exc
+    except OSError as exc:
+        raise ValidationError(f"fresh QA result file could not be read: {result_path}") from exc
+
+    try:
+        payload = json.loads(raw_text)
+    except json.JSONDecodeError as exc:
+        raise ValidationError(f"fresh QA result file is not valid JSON: {result_path}") from exc
+
+    if isinstance(payload, list):
+        results = payload
+    elif isinstance(payload, dict) and "results" in payload:
+        results = payload["results"]
+    elif isinstance(payload, dict):
+        results = [payload]
+    else:
+        raise ValidationError("fresh QA result file must contain an object, a list, or {'results': [...]}")
+
+    if not isinstance(results, list):
+        raise ValidationError("fresh QA result file 'results' must be a list")
+    if not all(isinstance(result, dict) for result in results):
+        raise ValidationError("fresh QA result entries must be objects")
+    return results
+
+
+def _fresh_qa_context_for_phase(context: dict[str, Any], phase: str) -> dict[str, Any]:
+    if phase == "all":
+        return context
+    filtered = dict(context)
+    if phase == "phase1":
+        filtered.pop("phase2_context", None)
+        selected_packet = dict(filtered.get("selected_packet") or {})
+        if selected_packet:
+            phase1_html_path = selected_packet.get("phase1_html_path")
+            phase1_url_path = selected_packet.get("phase1_url_path")
+            for field in ("html_path", "markdown_path", "url_path", "phase1_html_path", "phase1_url_path"):
+                selected_packet.pop(field, None)
+            selected_packet["html_path"] = phase1_html_path
+            selected_packet["url_path"] = phase1_url_path
+            selected_packet["artifact"] = "phase1_redacted_html"
+            filtered["selected_packet"] = selected_packet
+    else:
+        raise ValidationError(f"unknown fresh QA phase: {phase}")
+    filtered["context_phase"] = phase
+    return filtered
 
 
 def _print_receipt(receipt: Any, *, include_close_session_holds: bool = False) -> None:
@@ -100,6 +155,32 @@ def build_parser() -> argparse.ArgumentParser:
     serve_parser = subparsers.add_parser("serve-packets", help=COMMAND_HELP["serve-packets"])
     serve_parser.add_argument("--course", required=True)
     serve_parser.add_argument("--port", type=int, default=8765)
+
+    fresh_qa_context_parser = subparsers.add_parser(
+        "fresh-qa-context",
+        help=COMMAND_HELP["fresh-qa-context"],
+    )
+    fresh_qa_context_parser.add_argument("--today", required=True)
+    fresh_qa_context_parser.add_argument("--course")
+    fresh_qa_context_parser.add_argument(
+        "--phase",
+        choices=["phase1", "all"],
+        default="phase1",
+        help="Print only the learner-visible Phase 1 context by default; use all only for trusted orchestration.",
+    )
+
+    fresh_qa_report_parser = subparsers.add_parser(
+        "fresh-qa-report",
+        help=COMMAND_HELP["fresh-qa-report"],
+    )
+    fresh_qa_report_parser.add_argument("--result-file", required=True)
+    fresh_qa_report_parser.add_argument("--today", required=True)
+    fresh_qa_report_parser.add_argument(
+        "--expected-course",
+        action="append",
+        default=[],
+        help="Require one fresh QA result for this course. Defaults to active courses in --workspace when present.",
+    )
 
     return parser
 
@@ -177,6 +258,32 @@ def main(argv: list[str] | None = None) -> int:
 
         if parsed.command == "status":
             print(engine.status(parsed.course))
+            return 0
+
+        if parsed.command == "fresh-qa-context":
+            course_slugs = [parsed.course] if parsed.course else engine.list_active_course_slugs()
+            contexts = [
+                _fresh_qa_context_for_phase(
+                    engine.build_fresh_qa_context(course_slug, today=parsed.today),
+                    parsed.phase,
+                )
+                for course_slug in course_slugs
+            ]
+            print(json.dumps({"today": parsed.today, "courses": contexts}, ensure_ascii=False, indent=2))
+            return 0
+
+        if parsed.command == "fresh-qa-report":
+            results = _load_fresh_qa_results(parsed.result_file)
+            expected_course_slugs = parsed.expected_course or engine.list_active_course_slugs()
+            if not expected_course_slugs:
+                expected_course_slugs = None
+            sys.stdout.write(
+                render_daily_fresh_qa_report(
+                    results,
+                    today=parsed.today,
+                    expected_course_slugs=expected_course_slugs,
+                )
+            )
             return 0
     except (ValidationError, ValueError) as exc:
         print(f"error: {exc}", file=sys.stderr)

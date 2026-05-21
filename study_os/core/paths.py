@@ -55,6 +55,13 @@ class CoursePaths:
     def recall_packet_html_file(self, *, day_index: int) -> Path:
         return self._daily_packet_html_file(day_index=day_index, packet_type="recall")
 
+    def fresh_qa_phase1_html_file(self, *, day_index: int, packet_type: str) -> Path:
+        if packet_type not in {"learning", "recall"}:
+            raise ValueError("packet_type must be learning or recall")
+        if isinstance(day_index, bool) or not isinstance(day_index, int) or day_index <= 0:
+            raise ValueError("day_index must be a positive integer")
+        return self.outputs_dir / "fresh_qa" / f"day_{day_index:02d}_{packet_type}_phase1.html"
+
     def _daily_packet_html_file(self, *, day_index: int, packet_type: str) -> Path:
         if isinstance(day_index, bool) or not isinstance(day_index, int) or day_index <= 0:
             raise ValueError("day_index must be a positive integer")

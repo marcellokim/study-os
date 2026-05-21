@@ -1,22 +1,24 @@
 from __future__ import annotations
 
 from dataclasses import asdict, replace
+from html.parser import HTMLParser
 from pathlib import Path
 import shutil
 from typing import Any
 
 from study_os.core.close_session_draft import build_close_session_draft
 from study_os.core.constants import STATUS_ORDER
+from study_os.core.fresh_qa import AXIS_VALUES, FRESH_QA_AXES, GATES, REQUIRED_FIELDS
 from study_os.core.models import Block, CourseConfig, ExecutionReceipt, Item, MasteryRecord, QueueEntry, VisualRequirement
 from study_os.core.packet_builder import (
     build_final_recall_packet_model,
     build_learning_packet_model,
     build_recall_packet_model,
 )
-from study_os.core.packet_html import render_packet_html
+from study_os.core.packet_html import render_packet_html, render_phase1_packet_html
 from study_os.core.packet_progress import build_progress_key
 from study_os.core.packets import build_final_recall_pack, build_learning_packet, build_master_plan, build_recall_packet
-from study_os.core.paths import build_course_paths
+from study_os.core.paths import CoursePaths, build_course_paths
 from study_os.core.scheduler import build_queue_entry
 from study_os.core.source_files import validate_source_files
 from study_os.core.storage import CourseStore
@@ -35,6 +37,58 @@ _IMPORTANCE_ORDER = {"high": 0, "medium": 1, "low": 2}
 _PRIORITY_ORDER = {"urgent": 0, "high": 1, "medium": 2, "low": 3}
 _NEW_BLOCKS_PER_DAY = 2
 _FALLBACK_STUDY_ORDER = 10**9
+
+
+class _PacketItemIdParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.item_ids: list[str] = []
+        self.prompts_by_item_id: dict[str, str] = {}
+        self._current_item_id: str | None = None
+        self._in_entry_header = False
+        self._in_prompt_span = False
+        self._prompt_chunks: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        attr_map = dict(attrs)
+        classes = set((attr_map.get("class") or "").split())
+        if self._current_item_id is not None:
+            if tag == "div" and "packet-entry-header" in classes and not self._in_entry_header:
+                self._in_entry_header = True
+            elif self._in_entry_header and tag == "span" and not self._in_prompt_span:
+                self._in_prompt_span = True
+                self._prompt_chunks = []
+            return
+
+        if tag == "article" and "packet-entry" in classes:
+            item_id = attr_map.get("data-item-id")
+            if item_id:
+                self.item_ids.append(item_id)
+                self._current_item_id = item_id
+
+    def handle_endtag(self, tag: str) -> None:
+        if self._current_item_id is None:
+            return
+
+        if self._in_prompt_span and tag == "span":
+            prompt = " ".join("".join(self._prompt_chunks).split())
+            if prompt:
+                self.prompts_by_item_id[self._current_item_id] = prompt
+            self._in_prompt_span = False
+            self._prompt_chunks = []
+
+        if self._in_entry_header and tag == "div":
+            self._in_entry_header = False
+
+        if tag == "article":
+            self._current_item_id = None
+            self._in_entry_header = False
+            self._in_prompt_span = False
+            self._prompt_chunks = []
+
+    def handle_data(self, data: str) -> None:
+        if self._in_prompt_span:
+            self._prompt_chunks.append(data)
 
 
 def _pending_visual_requirements(visuals: list[VisualRequirement]) -> list[VisualRequirement]:
@@ -79,9 +133,113 @@ def _review_entry_is_due(entry: QueueEntry, *, day_index: int, today: str) -> bo
     return False
 
 
+def _packet_item_ids_from_html(html_path: Path) -> tuple[list[str] | None, dict[str, str], bool]:
+    try:
+        html = html_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return None, {}, False
+    parser = _PacketItemIdParser()
+    try:
+        parser.feed(html)
+    except Exception:
+        return None, {}, False
+    return list(parser.item_ids), parser.prompts_by_item_id, bool(parser.item_ids)
+
+
+def _fresh_qa_packet_paths(paths: CoursePaths, *, packet_type: str, day_index: int) -> tuple[Path, Path, str]:
+    if packet_type == "recall":
+        return (
+            paths.recall_packet_html_file(day_index=day_index),
+            paths.daily_dir / f"day_{day_index:02d}_recall.md",
+            f"/packets/recall/day/{day_index}",
+        )
+    return (
+        paths.learning_packet_html_file(day_index=day_index),
+        paths.daily_dir / f"day_{day_index:02d}_learning.md",
+        f"/packets/learning/day/{day_index}",
+    )
+
+
+def _fresh_qa_phase1_url_path(*, packet_type: str, day_index: int) -> str:
+    return f"/fresh-qa/phase1/{packet_type.replace('_', '-')}/day/{day_index}"
+
+
+def _write_fresh_qa_phase1_html(
+    paths: CoursePaths,
+    *,
+    source_html_path: Path,
+    packet_type: str,
+    day_index: int,
+) -> Path:
+    phase1_html_path = paths.fresh_qa_phase1_html_file(
+        day_index=day_index,
+        packet_type=packet_type,
+    )
+    phase1_html_path.parent.mkdir(parents=True, exist_ok=True)
+    phase1_html_path.write_text(
+        render_phase1_packet_html(source_html_path.read_text(encoding="utf-8")),
+        encoding="utf-8",
+    )
+    return phase1_html_path
+
+
+def _item_phase1_context(item: Item) -> dict[str, Any]:
+    return {
+        "item_id": item.item_id,
+        "block_id": item.block_id,
+        "prompt": item.prompt,
+        "answer_mode": item.answer_mode,
+        "needs_visuals": item.needs_visuals,
+    }
+
+
+def _visual_payload(visual: VisualRequirement) -> dict[str, Any]:
+    return {
+        "item_id": visual.item_id,
+        "block_id": visual.block_id,
+        "description": visual.description,
+        "required_image": visual.required_image,
+        "status": visual.status,
+    }
+
+
+def _item_phase2_context(item: Item, visuals: list[VisualRequirement]) -> dict[str, Any]:
+    return {
+        "item_id": item.item_id,
+        "block_id": item.block_id,
+        "prompt": item.prompt,
+        "answer_mode": item.answer_mode,
+        "difficulty": item.difficulty,
+        "exam_relevance": item.exam_relevance,
+        "needs_visuals": item.needs_visuals,
+        "answer_key": item.answer_key,
+        "rubric": item.rubric,
+        "common_mistakes": list(item.common_mistakes),
+        "model_answer": item.model_answer,
+        "worked_example": item.worked_example,
+        "correction_ladder": list(item.correction_ladder),
+        "source_refs": list(item.source_refs),
+        "visual_requirements": [
+            _visual_payload(visual)
+            for visual in visuals
+            if visual.item_id == item.item_id
+        ],
+    }
+
+
 class StudyEngine:
     def __init__(self, workspace_root: Path) -> None:
         self.workspace_root = workspace_root
+
+    def list_active_course_slugs(self) -> list[str]:
+        courses_root = self.workspace_root / "courses"
+        if not courses_root.exists():
+            return []
+        return sorted(
+            path.name
+            for path in courses_root.iterdir()
+            if path.is_dir() and (path / "course.yaml").exists()
+        )
 
     def initialize_course(self, payload: dict[str, Any], *, validate_sources: bool = False) -> ExecutionReceipt:
         request = validate_init_course_request(payload)
@@ -243,6 +401,197 @@ class StudyEngine:
             ],
             warnings=[],
         )
+
+    def build_fresh_qa_context(self, course_slug: str, *, today: str) -> dict[str, Any]:
+        validate_course_slug_text(course_slug)
+        validate_iso_date_text(today, "today")
+
+        paths = build_course_paths(self.workspace_root, course_slug)
+        if not paths.course_file.exists():
+            raise ValidationError(f"unknown course_slug: {course_slug}")
+
+        store = CourseStore(paths)
+        course = CourseConfig(**store.load_course())
+        items = [Item(**payload) for payload in store.load_items()]
+        visuals = [VisualRequirement(**payload) for payload in store.load_visual_requirements()]
+        review_queue = [QueueEntry(**payload) for payload in store.load_review_queue()]
+
+        day_index = course.current_day
+        due_entries = [
+            entry
+            for entry in review_queue
+            if day_index > 0 and _review_entry_is_due(entry, day_index=day_index, today=today)
+        ]
+        due_entries.sort(
+            key=lambda entry: (
+                _PRIORITY_ORDER.get(entry.priority, len(_PRIORITY_ORDER)),
+                entry.next_review_date or "",
+                entry.item_id,
+            )
+        )
+        review_pressure = {
+            "due_count": len(due_entries),
+            "urgent_count": sum(1 for entry in due_entries if entry.priority == "urgent"),
+            "top_due_item_ids": [entry.item_id for entry in due_entries[:5]],
+        }
+        inspection_budget = {
+            "max_items": 5,
+            "selection_rules": [
+                "Inspect at most five visible packet items.",
+                "Phase 1 uses only selected packet content before grading materials are revealed.",
+                "Phase 2 grades only items visible in the selected packet.",
+                "Do not inspect unrelated course items to fill gaps.",
+            ],
+        }
+
+        if day_index <= 0:
+            return {
+                "course_slug": course_slug,
+                "today": today,
+                "current_day": day_index,
+                "next_action": {
+                    "kind": "generate_day",
+                    "label": "Generate today's study day",
+                    "reason": "course.current_day is not initialized yet",
+                },
+                "selected_packet": {
+                    "packet_type": None,
+                    "day_index": None,
+                    "html_path": None,
+                    "markdown_path": None,
+                    "url_path": None,
+                    "exists": False,
+                    "openable": False,
+                },
+                "review_pressure": review_pressure,
+                "inspection_budget": inspection_budget,
+                "phase1_context": self._fresh_qa_phase1_context(
+                    packet_type=None,
+                    day_index=None,
+                    packet_item_ids=[],
+                ),
+                "phase2_context": {"items": []},
+                "result_contract": self._fresh_qa_result_contract(),
+            }
+
+        packet_type = "recall" if due_entries else "learning"
+        html_path, markdown_path, url_path = _fresh_qa_packet_paths(
+            paths,
+            packet_type=packet_type,
+            day_index=day_index,
+        )
+        items_by_id = {item.item_id: item for item in items}
+        parsed_html_item_ids, html_prompts_by_item_id, html_openable = _packet_item_ids_from_html(html_path)
+        unknown_packet_item_ids = [
+            item_id
+            for item_id in (parsed_html_item_ids or [])
+            if item_id not in items_by_id
+        ]
+        duplicate_packet_item_ids = [
+            item_id
+            for item_id in dict.fromkeys(parsed_html_item_ids or [])
+            if (parsed_html_item_ids or []).count(item_id) > 1
+        ]
+        stale_prompt_item_ids = [
+            item_id
+            for item_id in (parsed_html_item_ids or [])
+            if item_id in items_by_id
+            and html_prompts_by_item_id.get(item_id) != items_by_id[item_id].prompt
+        ]
+        packet_exists = html_path.exists() or markdown_path.exists()
+        packet_openable = (
+            html_path.is_file()
+            and html_openable
+            and not unknown_packet_item_ids
+            and not duplicate_packet_item_ids
+            and not stale_prompt_item_ids
+        )
+        phase1_html_path: Path | None = None
+        phase1_url_path: str | None = None
+        if packet_openable:
+            try:
+                phase1_html_path = _write_fresh_qa_phase1_html(
+                    paths,
+                    source_html_path=html_path,
+                    packet_type=packet_type,
+                    day_index=day_index,
+                )
+                phase1_url_path = _fresh_qa_phase1_url_path(
+                    packet_type=packet_type,
+                    day_index=day_index,
+                )
+            except (OSError, UnicodeDecodeError):
+                packet_openable = False
+                phase1_html_path = None
+                phase1_url_path = None
+        selected_packet = {
+            "packet_type": packet_type,
+            "day_index": day_index,
+            "html_path": str(html_path),
+            "markdown_path": str(markdown_path),
+            "url_path": url_path,
+            "phase1_html_path": str(phase1_html_path) if phase1_html_path else None,
+            "phase1_url_path": phase1_url_path,
+            "exists": packet_exists,
+            "openable": packet_openable,
+        }
+
+        parsed_packet_item_ids = (
+            parsed_html_item_ids
+            if packet_openable and parsed_html_item_ids is not None
+            else []
+        )
+        packet_item_ids = parsed_packet_item_ids[: inspection_budget["max_items"]]
+        phase2_item_ids = parsed_packet_item_ids[: inspection_budget["max_items"]]
+
+        phase1_items = [
+            items_by_id[item_id]
+            for item_id in packet_item_ids
+            if item_id in items_by_id
+        ]
+        phase2_items = [
+            items_by_id[item_id]
+            for item_id in phase2_item_ids
+            if item_id in items_by_id
+        ]
+
+        if packet_openable:
+            next_action = {
+                "kind": "open_packet",
+                "label": f"Open day {day_index} {packet_type} packet",
+                "reason": (
+                    "due review items are ready for recall"
+                    if packet_type == "recall"
+                    else "no due review items; continue current-day learning"
+                ),
+            }
+        else:
+            next_action = {
+                "kind": "packet_blocked",
+                "label": f"Regenerate missing day {day_index} {packet_type} packet",
+                "reason": "selected packet is missing or not openable; do not fall back to another packet type",
+            }
+
+        return {
+            "course_slug": course_slug,
+            "today": today,
+            "current_day": day_index,
+            "next_action": next_action,
+            "selected_packet": selected_packet,
+            "review_pressure": review_pressure,
+            "inspection_budget": inspection_budget,
+            "phase1_context": self._fresh_qa_phase1_context(
+                packet_type=packet_type,
+                day_index=day_index,
+                packet_item_ids=packet_item_ids,
+                items=phase1_items,
+                visuals=visuals,
+            ),
+            "phase2_context": {
+                "items": [_item_phase2_context(item, visuals) for item in phase2_items],
+            },
+            "result_contract": self._fresh_qa_result_contract(),
+        }
 
     def build_close_session_draft(
         self,
@@ -511,6 +860,43 @@ class StudyEngine:
             lines.append("- None")
 
         (self.workspace_root / "workspace.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    def _fresh_qa_phase1_context(
+        self,
+        *,
+        packet_type: str | None = None,
+        day_index: int | None = None,
+        packet_item_ids: list[str],
+        items: list[Item] | None = None,
+        visuals: list[VisualRequirement] | None = None,
+    ) -> dict[str, Any]:
+        selected_item_ids = set(packet_item_ids)
+        return {
+            "packet": {
+                "packet_type": packet_type,
+                "day_index": day_index,
+            },
+            "instructions": [
+                "Attempt answers from the safe learner-facing context only.",
+                "Do not inspect grading materials or source support before Phase 2.",
+                "Record blockers that prevent answering from the visible learner prompt.",
+            ],
+            "packet_item_ids": list(packet_item_ids),
+            "items": [_item_phase1_context(item) for item in (items or [])],
+            "visual_requirements": [
+                _visual_payload(visual)
+                for visual in (visuals or [])
+                if visual.item_id in selected_item_ids
+            ],
+        }
+
+    def _fresh_qa_result_contract(self) -> dict[str, Any]:
+        return {
+            "required_fields": list(REQUIRED_FIELDS),
+            "axes": list(FRESH_QA_AXES),
+            "axis_values": list(AXIS_VALUES),
+            "gate_values": list(GATES),
+        }
 
     def _should_hold_visual_gated_promotion(
         self,

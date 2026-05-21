@@ -2,7 +2,12 @@ from collections import UserDict
 import re
 import unittest
 
-from study_os.core.fresh_qa import FRESH_QA_AXES, normalize_fresh_qa_result
+from study_os.core.fresh_qa import (
+    FRESH_QA_AXES,
+    normalize_fresh_qa_result,
+    render_daily_fresh_qa_report,
+    select_global_fix_priority,
+)
 
 
 def complete_pass_result() -> dict:
@@ -296,6 +301,109 @@ class FreshQAResultTest(unittest.TestCase):
 
                 with self.assertRaisesRegex(ValueError, re.escape(message)):
                     normalize_fresh_qa_result(payload)
+
+    def test_select_global_fix_priority_prefers_block_over_warn(self) -> None:
+        warn_result = complete_pass_result()
+        warn_result["course_slug"] = "course-warn"
+        warn_result["axis_scorecard"]["exam_transfer"] = "WEAK"
+        warn_result["gate"] = "warn"
+        warn_result["highest_answer_rate_blocker"] = "Prompt is too generic."
+        warn_result["fix_priority"] = {
+            "summary": "Rewrite generic prompt.",
+            "axis": "exam_transfer",
+            "recommended_action": "Use exam-style question wording.",
+        }
+        block_result = complete_pass_result()
+        block_result["course_slug"] = "course-block"
+        block_result["axis_scorecard"]["grading_quality"] = "BLOCKED"
+        block_result["gate"] = "block"
+        block_result["highest_answer_rate_blocker"] = "Missing answer key."
+        block_result["fix_priority"] = {
+            "summary": "Add answer key.",
+            "axis": "grading_quality",
+            "recommended_action": "Attach answer key and rubric before next study session.",
+        }
+
+        priority = select_global_fix_priority([warn_result, block_result])
+
+        self.assertEqual("course-block", priority["course_slug"])
+        self.assertEqual("block", priority["gate"])
+        self.assertEqual("Add answer key.", priority["summary"])
+
+    def test_select_global_fix_priority_tie_breaks_to_lexicographically_later_course(self) -> None:
+        earlier_result = complete_pass_result()
+        earlier_result["course_slug"] = "alpha-course"
+        earlier_result["axis_scorecard"]["exam_transfer"] = "WEAK"
+        earlier_result["gate"] = "warn"
+        earlier_result["highest_answer_rate_blocker"] = "Alpha blocker."
+        earlier_result["fix_priority"] = {"summary": "Fix alpha."}
+        later_result = complete_pass_result()
+        later_result["course_slug"] = "zeta-course"
+        later_result["axis_scorecard"]["exam_transfer"] = "WEAK"
+        later_result["gate"] = "warn"
+        later_result["highest_answer_rate_blocker"] = "Zeta blocker."
+        later_result["fix_priority"] = {"summary": "Fix zeta."}
+
+        priority = select_global_fix_priority([earlier_result, later_result])
+
+        self.assertEqual("zeta-course", priority["course_slug"])
+        self.assertEqual("Fix zeta.", priority["summary"])
+
+    def test_select_global_fix_priority_empty_results_returns_stable_no_result_priority(self) -> None:
+        priority = select_global_fix_priority([])
+
+        self.assertEqual("", priority["course_slug"])
+        self.assertEqual("pass", priority["gate"])
+        self.assertIn("fresh QA", priority["summary"])
+        self.assertEqual("outcome_measurement", priority["axis"])
+        self.assertIn("fresh QA", priority["recommended_action"])
+        self.assertEqual("No fresh QA result.", priority["highest_answer_rate_blocker"])
+
+    def test_render_daily_fresh_qa_report_includes_priority_axes_blocker_and_packet_path(self) -> None:
+        result = complete_pass_result()
+        result["axis_scorecard"]["visual_source_connection"] = "WEAK"
+        result["gate"] = "warn"
+        result["highest_answer_rate_blocker"] = (
+            "Diagram reference is visible but hard to inspect."
+        )
+        result["fix_priority"] = {
+            "summary": "Expose the diagram crop beside the prompt.",
+            "axis": "visual_source_connection",
+            "recommended_action": "Render the required visual near the item.",
+        }
+        result["evidence"]["packet_path"] = "outputs/daily/day_03_recall.html"
+
+        report = render_daily_fresh_qa_report([result], today="2026-05-22")
+
+        self.assertIn("# Daily Fresh QA - 2026-05-22", report)
+        self.assertIn("## Global Fix Priority", report)
+        self.assertIn("정답률 영향", report)
+        self.assertIn("visual_source_connection: WEAK", report)
+        self.assertIn("Diagram reference is visible but hard to inspect.", report)
+        self.assertIn("outputs/daily/day_03_recall.html", report)
+
+    def test_render_daily_fresh_qa_report_normalizes_raw_results_internally(self) -> None:
+        result = complete_pass_result()
+        result["course_slug"] = "raw-mapping-course"
+        result["axis_scorecard"] = UserDict(
+            {**{axis: "OK" for axis in FRESH_QA_AXES}, "visual_source_connection": "WEAK"}
+        )
+        result["gate"] = "warn"
+        result["highest_answer_rate_blocker"] = "Raw mapping blocker."
+        result["fix_priority"] = UserDict(
+            {
+                "summary": "Normalize raw mapping.",
+                "axis": "visual_source_connection",
+                "recommended_action": "Render after normalization.",
+            }
+        )
+        result["evidence"] = UserDict({"packet_path": "raw/day_03_recall.html"})
+
+        report = render_daily_fresh_qa_report([UserDict(result)], today="2026-05-22")
+
+        self.assertIn("## raw-mapping-course", report)
+        self.assertIn("visual_source_connection: WEAK", report)
+        self.assertIn("raw/day_03_recall.html", report)
 
 
 if __name__ == "__main__":

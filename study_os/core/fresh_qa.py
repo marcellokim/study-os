@@ -1,5 +1,6 @@
 from collections.abc import Mapping
 from copy import deepcopy
+import json
 
 
 FRESH_QA_AXES = (
@@ -276,3 +277,111 @@ def _validate_axis_scorecard(axis_scorecard: dict) -> None:
         value = axis_scorecard[axis]
         if value not in AXIS_VALUES:
             raise ValueError(f"bad axis value: {axis}={value}")
+
+
+def select_global_fix_priority(results: list[dict]) -> dict:
+    if not results:
+        return {
+            "course_slug": "",
+            "gate": "pass",
+            "summary": "검사된 fresh QA 결과가 없습니다.",
+            "axis": "outcome_measurement",
+            "recommended_action": "먼저 fresh QA 결과를 생성하거나 수집하세요.",
+            "highest_answer_rate_blocker": "No fresh QA result.",
+        }
+
+    normalized_results = [normalize_fresh_qa_result(result) for result in results]
+    selected = max(normalized_results, key=_global_fix_priority_sort_key)
+    fix_priority = selected["fix_priority"]
+    return {
+        "course_slug": selected["course_slug"],
+        "gate": selected["gate"],
+        "summary": str(fix_priority.get("summary", selected["highest_answer_rate_blocker"])),
+        "axis": str(fix_priority.get("axis", "outcome_measurement")),
+        "recommended_action": str(
+            fix_priority.get("recommended_action", "Inspect the blocked QA evidence.")
+        ),
+        "highest_answer_rate_blocker": selected["highest_answer_rate_blocker"],
+    }
+
+
+def render_daily_fresh_qa_report(results: list[dict], *, today: str) -> str:
+    normalized_results = [normalize_fresh_qa_result(result) for result in results]
+    global_priority = select_global_fix_priority(normalized_results)
+    lines = [
+        f"# Daily Fresh QA - {today}",
+        "",
+        "## Global Fix Priority",
+        f"- course_slug: {global_priority['course_slug'] or 'none'}",
+        f"- gate: {global_priority['gate']}",
+        f"- axis: {global_priority['axis']}",
+        f"- highest_answer_rate_blocker: {global_priority['highest_answer_rate_blocker']}",
+        f"- fix_priority: {global_priority['summary']}",
+        f"- next_action: {global_priority['recommended_action']}",
+        "",
+    ]
+
+    for result in sorted(normalized_results, key=lambda row: row["course_slug"]):
+        lines.extend(
+            [
+                f"## {result['course_slug']}",
+                f"- next_action: {_format_report_value(result['next_action'])}",
+                f"- packet_checked: {_format_packet_checked(result)}",
+                f"- gate: {result['gate']} (computed: {result['computed_gate']})",
+                f"- 정답률 영향: {result['predicted_answer_rate_effect']}",
+                f"- highest_answer_rate_blocker: {result['highest_answer_rate_blocker']}",
+                f"- fix_priority: {_format_report_value(result['fix_priority'])}",
+                "",
+                "### 9-axis scorecard",
+            ]
+        )
+        for axis in FRESH_QA_AXES:
+            lines.append(f"- {axis}: {result['axis_scorecard'][axis]}")
+        lines.extend(["", "### evidence"])
+        evidence = result["evidence"]
+        if evidence:
+            for key in sorted(evidence):
+                lines.append(f"- {key}: {_format_report_value(evidence[key])}")
+        else:
+            lines.append("- none")
+        lines.append("")
+
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def _global_fix_priority_sort_key(result: dict) -> tuple:
+    blocked, weak, not_checked = _axis_counts(result["axis_scorecard"])
+    return (
+        GATE_STRENGTH[result["gate"]],
+        blocked,
+        weak,
+        not_checked,
+        result["course_slug"],
+    )
+
+
+def _axis_counts(axis_scorecard: dict) -> tuple[int, int, int]:
+    blocked = sum(1 for value in axis_scorecard.values() if value == "BLOCKED")
+    weak = sum(1 for value in axis_scorecard.values() if value == "WEAK")
+    not_checked = sum(1 for value in axis_scorecard.values() if value == "NOT_CHECKED")
+    return blocked, weak, not_checked
+
+
+def _format_packet_checked(result: dict) -> str:
+    packet_type = result["packet_type"]
+    day_index = result["day_index"]
+    if day_index is None:
+        label = packet_type
+    else:
+        label = f"{packet_type}:day:{day_index}"
+
+    packet_path = result["evidence"].get("packet_path")
+    if isinstance(packet_path, str) and packet_path:
+        return f"{label} ({packet_path})"
+    return label
+
+
+def _format_report_value(value: object) -> str:
+    if isinstance(value, Mapping) or isinstance(value, list):
+        return json.dumps(value, ensure_ascii=False, sort_keys=True)
+    return str(value)

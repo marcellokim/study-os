@@ -265,6 +265,29 @@ class PacketServerTest(unittest.TestCase):
             self.assertEqual(response.status, 200)
             self.assertIn("Learning packet", body)
 
+    def test_get_serves_fresh_qa_phase1_html_packet(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            paths = build_course_paths(workspace, "operating-systems-midterm")
+            paths.ensure_directories()
+            phase1_file = paths.fresh_qa_phase1_html_file(day_index=1, packet_type="learning")
+            phase1_file.parent.mkdir(parents=True, exist_ok=True)
+            phase1_file.write_text("<html>Safe phase1 packet</html>", encoding="utf-8")
+
+            server, thread = self._start_server(workspace)
+
+            connection = HTTPConnection("127.0.0.1", server.port)
+            connection.request("GET", "/fresh-qa/phase1/learning/day/1")
+            response = connection.getresponse()
+            body = response.read().decode("utf-8")
+            connection.close()
+
+            server.shutdown()
+            thread.join(timeout=1)
+
+            self.assertEqual(response.status, 200)
+            self.assertIn("Safe phase1 packet", body)
+
     def test_get_learning_packet_with_non_positive_day_returns_404(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             workspace = Path(tmp)

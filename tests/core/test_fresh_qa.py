@@ -62,6 +62,14 @@ class FreshQAResultTest(unittest.TestCase):
         self.assertEqual("positive", result["predicted_answer_rate_effect"])
         self.assertEqual({axis: "OK" for axis in FRESH_QA_AXES}, result["axis_scorecard"])
 
+    def test_rejects_pass_result_with_no_inspected_items(self) -> None:
+        payload = complete_pass_result()
+        payload["phase1_attempts"] = []
+        payload["phase2_grading"] = []
+
+        with self.assertRaisesRegex(ValueError, "weaker gate"):
+            normalize_fresh_qa_result(payload)
+
     def test_stricter_submitted_gate_controls_predicted_effect(self) -> None:
         payload = complete_pass_result()
         payload["gate"] = "block"

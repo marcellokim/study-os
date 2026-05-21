@@ -76,6 +76,7 @@ def computed_gate_for(
     failure_type: str,
     self_grading_blocked: bool = False,
     non_correct_grading: bool = False,
+    no_items_inspected: bool = False,
 ) -> str:
     axis_gate = _axis_driven_gate_for(axis_scorecard)
     failure_gate = _failure_type_gate_for(
@@ -83,7 +84,11 @@ def computed_gate_for(
         self_grading_blocked=self_grading_blocked,
     )
     grading_gate = "warn" if non_correct_grading else "pass"
-    return max((axis_gate, failure_gate, grading_gate), key=lambda gate: GATE_STRENGTH[gate])
+    inspection_gate = "block" if no_items_inspected else "pass"
+    return max(
+        (axis_gate, failure_gate, grading_gate, inspection_gate),
+        key=lambda gate: GATE_STRENGTH[gate],
+    )
 
 
 def predicted_effect_for(gate: str, axis_scorecard: dict) -> str:
@@ -137,6 +142,7 @@ def normalize_fresh_qa_result(payload: dict) -> dict:
         non_correct_grading=any(
             entry["result"] != "correct" for entry in normalized["phase2_grading"]
         ),
+        no_items_inspected=not normalized["phase1_attempts"] or not normalized["phase2_grading"],
     )
     if GATE_STRENGTH[gate] < GATE_STRENGTH[computed_gate]:
         raise ValueError(f"weaker gate: gate {gate} is weaker than computed gate {computed_gate}")

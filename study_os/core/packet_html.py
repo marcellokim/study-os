@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from html import escape
+from html.parser import HTMLParser
 import json
 from urllib.parse import quote
 
@@ -22,6 +23,230 @@ _BLOCKER_OPTIONS = (
     ("careless", "실수"),
     ("unknown", "불명"),
 )
+
+
+class _AnswerSupportStripper(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=False)
+        self._chunks: list[str] = []
+        self._skip_depth = 0
+        self._pending_li_chunks: list[str] = []
+        self._pending_li_depth = 0
+        self._textarea_depth = 0
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        attr_map = dict(attrs)
+        classes = set((attr_map.get("class") or "").split())
+        if self._skip_depth:
+            self._skip_depth += 1
+            return
+        if self._textarea_depth:
+            self._textarea_depth += 1
+            return
+        if self._pending_li_depth:
+            self._pending_li_chunks.append(_serialize_start_tag(tag, _phase1_attrs_for_tag(tag, attrs)))
+            if tag == "li":
+                self._pending_li_depth += 1
+            return
+        if tag == "script":
+            self._skip_depth = 1
+            return
+        if tag == "a" and _phase1_link_exposes_packet_route(attrs):
+            self._skip_depth = 1
+            return
+        if tag == "details" and "packet-answer-support" in classes:
+            self._skip_depth = 1
+            return
+        if tag == "p" and classes.intersection({"packet-answer-key", "packet-detail"}):
+            self._skip_depth = 1
+            return
+        if tag == "textarea":
+            self._chunks.append(_serialize_start_tag(tag, _phase1_attrs_for_tag(tag, attrs)))
+            self._textarea_depth = 1
+            return
+        if tag == "li":
+            self._pending_li_depth = 1
+            self._pending_li_chunks = [_serialize_start_tag(tag, _phase1_attrs_for_tag(tag, attrs))]
+            return
+        self._chunks.append(_serialize_start_tag(tag, _phase1_attrs_for_tag(tag, attrs)))
+
+    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if self._skip_depth:
+            return
+        if self._textarea_depth:
+            return
+        if self._pending_li_depth:
+            self._pending_li_chunks.append(
+                _serialize_start_tag(
+                    tag,
+                    _phase1_attrs_for_tag(tag, attrs),
+                    self_closing=True,
+                )
+            )
+            return
+        self._chunks.append(
+            _serialize_start_tag(tag, _phase1_attrs_for_tag(tag, attrs), self_closing=True)
+        )
+
+    def handle_endtag(self, tag: str) -> None:
+        if self._skip_depth:
+            self._skip_depth -= 1
+            return
+        if self._textarea_depth:
+            if tag == "textarea":
+                self._textarea_depth -= 1
+                if not self._textarea_depth:
+                    self._chunks.append(f"</{tag}>")
+            else:
+                self._textarea_depth -= 1
+            return
+        if self._pending_li_depth:
+            self._pending_li_chunks.append(f"</{tag}>")
+            if tag == "li":
+                self._pending_li_depth -= 1
+                if not self._pending_li_depth:
+                    li_html = "".join(self._pending_li_chunks)
+                    if not _phase1_list_item_mentions_grading_support(li_html):
+                        self._chunks.append(li_html)
+                    self._pending_li_chunks = []
+            return
+        self._chunks.append(f"</{tag}>")
+
+    def handle_data(self, data: str) -> None:
+        if self._skip_depth:
+            return
+        if self._textarea_depth:
+            return
+        if self._pending_li_depth:
+            self._pending_li_chunks.append(data)
+            return
+        self._chunks.append(data)
+
+    def handle_entityref(self, name: str) -> None:
+        if self._skip_depth:
+            return
+        if self._textarea_depth:
+            return
+        if self._pending_li_depth:
+            self._pending_li_chunks.append(f"&{name};")
+            return
+        self._chunks.append(f"&{name};")
+
+    def handle_charref(self, name: str) -> None:
+        if self._skip_depth:
+            return
+        if self._textarea_depth:
+            return
+        if self._pending_li_depth:
+            self._pending_li_chunks.append(f"&#{name};")
+            return
+        self._chunks.append(f"&#{name};")
+
+    def handle_comment(self, data: str) -> None:
+        if self._skip_depth:
+            return
+        if self._textarea_depth:
+            return
+        if self._pending_li_depth:
+            self._pending_li_chunks.append(f"<!--{data}-->")
+            return
+        self._chunks.append(f"<!--{data}-->")
+
+    def handle_decl(self, decl: str) -> None:
+        if self._skip_depth:
+            return
+        if self._textarea_depth:
+            return
+        if self._pending_li_depth:
+            self._pending_li_chunks.append(f"<!{decl}>")
+            return
+        self._chunks.append(f"<!{decl}>")
+
+    def unknown_decl(self, data: str) -> None:
+        if self._skip_depth:
+            return
+        if self._textarea_depth:
+            return
+        if self._pending_li_depth:
+            self._pending_li_chunks.append(f"<![{data}]>")
+            return
+        self._chunks.append(f"<![{data}]>")
+
+    def handle_pi(self, data: str) -> None:
+        if self._skip_depth:
+            return
+        if self._textarea_depth:
+            return
+        if self._pending_li_depth:
+            self._pending_li_chunks.append(f"<?{data}>")
+            return
+        self._chunks.append(f"<?{data}>")
+
+    def html(self) -> str:
+        return "".join(self._chunks)
+
+
+def _serialize_start_tag(
+    tag: str,
+    attrs: list[tuple[str, str | None]],
+    *,
+    self_closing: bool = False,
+) -> str:
+    serialized_attrs = []
+    for name, value in attrs:
+        if value is None:
+            serialized_attrs.append(f" {name}")
+        else:
+            serialized_attrs.append(f' {name}="{escape(value, quote=True)}"')
+    suffix = " />" if self_closing else ">"
+    return f"<{tag}{''.join(serialized_attrs)}{suffix}"
+
+
+def _phase1_attrs_for_tag(
+    tag: str,
+    attrs: list[tuple[str, str | None]],
+) -> list[tuple[str, str | None]]:
+    if tag == "input":
+        return [(name, value) for name, value in attrs if name != "checked"]
+    return attrs
+
+
+def _phase1_link_exposes_packet_route(attrs: list[tuple[str, str | None]]) -> bool:
+    for name, value in attrs:
+        if name == "href" and isinstance(value, str) and value.startswith("/packets/"):
+            return True
+    return False
+
+
+def _phase1_list_item_mentions_grading_support(html: str) -> bool:
+    normalized = html.casefold()
+    return any(
+        marker in normalized
+        for marker in (
+            "정답 기준",
+            "채점 기준",
+            "rubric",
+            "answer key",
+            "answer_key",
+            "answer-key",
+            "model answer",
+            "model_answer",
+            "model-answer",
+            "최종 암기 답안",
+            "모범 답안",
+        )
+    )
+
+
+def render_phase1_packet_html(html: str) -> str:
+    stripper = _AnswerSupportStripper()
+    stripper.feed(html)
+    stripper.close()
+    return (
+        stripper.html()
+        .replace("packet-answer-support", "packet-phase1-redacted-support")
+        .replace("packet-answer-key", "packet-phase1-redacted-key")
+    )
 
 
 def _json_for_script(value: object) -> str:

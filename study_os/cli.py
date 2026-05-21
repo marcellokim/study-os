@@ -77,6 +77,16 @@ def _fresh_qa_context_for_phase(context: dict[str, Any], phase: str) -> dict[str
     filtered = dict(context)
     if phase == "phase1":
         filtered.pop("phase2_context", None)
+        selected_packet = dict(filtered.get("selected_packet") or {})
+        if selected_packet:
+            phase1_html_path = selected_packet.get("phase1_html_path")
+            phase1_url_path = selected_packet.get("phase1_url_path")
+            for field in ("html_path", "markdown_path", "url_path", "phase1_html_path", "phase1_url_path"):
+                selected_packet.pop(field, None)
+            selected_packet["html_path"] = phase1_html_path
+            selected_packet["url_path"] = phase1_url_path
+            selected_packet["artifact"] = "phase1_redacted_html"
+            filtered["selected_packet"] = selected_packet
     else:
         raise ValidationError(f"unknown fresh QA phase: {phase}")
     filtered["context_phase"] = phase

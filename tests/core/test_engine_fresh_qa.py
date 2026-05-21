@@ -317,6 +317,61 @@ class EngineFreshQAContextTest(unittest.TestCase):
                 "Sequence diagram with guard condition.",
             )
 
+    def test_phase1_safe_html_excludes_answer_support_from_raw_artifact(self) -> None:
+        with TemporaryDirectory() as tmp:
+            engine, _store = self._initialized_day_one(tmp)
+
+            context = engine.build_fresh_qa_context("software-engineering-midterm", today="2026-05-22")
+
+            selected_packet = context["selected_packet"]
+            self.assertEqual(
+                selected_packet["phase1_url_path"],
+                "/fresh-qa/phase1/learning/day/1",
+            )
+            self.assertNotEqual(selected_packet["html_path"], selected_packet["phase1_html_path"])
+            phase1_html = Path(selected_packet["phase1_html_path"]).read_text(encoding="utf-8")
+            self.assertIn("Trace the sequence diagram message order.", phase1_html)
+            self.assertIn('class="packet-answer-box"', phase1_html)
+            self.assertNotIn("packet-answer-support", phase1_html)
+            self.assertNotIn("Focus on message order and guard conditions.", phase1_html)
+            self.assertNotIn("Order messages and include the guard condition.", phase1_html)
+            self.assertNotIn("Full credit requires order, guard, and actor responsibility.", phase1_html)
+
+    def test_phase1_safe_html_excludes_packet_routes_and_saved_progress_state(self) -> None:
+        with TemporaryDirectory() as tmp:
+            engine = StudyEngine(Path(tmp))
+            engine.initialize_course(self._payload())
+            paths = build_course_paths(Path(tmp), "software-engineering-midterm")
+            store = CourseStore(paths)
+            store.save_packet_progress(
+                {
+                    "learning:day:1": {
+                        "sequence_diagram_trace": {
+                            "checked": True,
+                            "draft_answer": "LEAKED PREVIOUS DRAFT",
+                            "result": "correct",
+                            "confidence_score": 4,
+                            "blocker_type": "concept",
+                        }
+                    }
+                }
+            )
+            engine.start_day("software-engineering-midterm", day_index=1, today="2026-05-22")
+
+            context = engine.build_fresh_qa_context("software-engineering-midterm", today="2026-05-22")
+
+            phase1_html = Path(context["selected_packet"]["phase1_html_path"]).read_text(encoding="utf-8")
+            self.assertIn("Trace the sequence diagram message order.", phase1_html)
+            self.assertNotIn("/packets/learning/day/1", phase1_html)
+            self.assertNotIn("/packets/recall/day/1", phase1_html)
+            self.assertNotIn("LEAKED PREVIOUS DRAFT", phase1_html)
+            self.assertNotIn('data-item-id="sequence_diagram_trace" checked', phase1_html)
+            self.assertNotIn('value="correct" checked', phase1_html)
+            self.assertNotIn('value="4" checked', phase1_html)
+            self.assertNotIn('value="concept" checked', phase1_html)
+            self.assertNotIn("loadSavedProgress", phase1_html)
+            self.assertNotIn("/api/progress", phase1_html)
+
     def test_phase2_context_is_limited_to_selected_packet_items_not_whole_course(self) -> None:
         with TemporaryDirectory() as tmp:
             engine, _store = self._initialized_day_one(tmp)

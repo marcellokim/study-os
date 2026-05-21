@@ -366,8 +366,14 @@ class CliSmokeTest(unittest.TestCase):
             self.assertEqual(payload["today"], "2026-05-22")
             self.assertEqual(len(payload["courses"]), 1)
             self.assertEqual(payload["courses"][0]["course_slug"], "sample-course")
-            self.assertIn("phase1_context", payload["courses"][0])
-            self.assertNotIn("phase2_context", payload["courses"][0])
+            course_context = payload["courses"][0]
+            self.assertIn("phase1_context", course_context)
+            self.assertNotIn("phase2_context", course_context)
+            selected_packet = course_context["selected_packet"]
+            self.assertEqual(selected_packet["url_path"], "/fresh-qa/phase1/learning/day/1")
+            self.assertTrue(selected_packet["html_path"].endswith("day_01_learning_phase1.html"))
+            self.assertNotIn("markdown_path", selected_packet)
+            self.assertNotIn("day_01_learning.html", json.dumps(course_context))
 
     def test_fresh_qa_context_outputs_single_requested_course(self) -> None:
         with TemporaryDirectory() as tmp:

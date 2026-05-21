@@ -15,7 +15,7 @@ from study_os.core.packet_builder import (
     build_learning_packet_model,
     build_recall_packet_model,
 )
-from study_os.core.packet_html import render_packet_html
+from study_os.core.packet_html import render_packet_html, render_phase1_packet_html
 from study_os.core.packet_progress import build_progress_key
 from study_os.core.packets import build_final_recall_pack, build_learning_packet, build_master_plan, build_recall_packet
 from study_os.core.paths import CoursePaths, build_course_paths
@@ -158,6 +158,29 @@ def _fresh_qa_packet_paths(paths: CoursePaths, *, packet_type: str, day_index: i
         paths.daily_dir / f"day_{day_index:02d}_learning.md",
         f"/packets/learning/day/{day_index}",
     )
+
+
+def _fresh_qa_phase1_url_path(*, packet_type: str, day_index: int) -> str:
+    return f"/fresh-qa/phase1/{packet_type.replace('_', '-')}/day/{day_index}"
+
+
+def _write_fresh_qa_phase1_html(
+    paths: CoursePaths,
+    *,
+    source_html_path: Path,
+    packet_type: str,
+    day_index: int,
+) -> Path:
+    phase1_html_path = paths.fresh_qa_phase1_html_file(
+        day_index=day_index,
+        packet_type=packet_type,
+    )
+    phase1_html_path.parent.mkdir(parents=True, exist_ok=True)
+    phase1_html_path.write_text(
+        render_phase1_packet_html(source_html_path.read_text(encoding="utf-8")),
+        encoding="utf-8",
+    )
+    return phase1_html_path
 
 
 def _item_phase1_context(item: Item) -> dict[str, Any]:
@@ -483,12 +506,32 @@ class StudyEngine:
             and not duplicate_packet_item_ids
             and not stale_prompt_item_ids
         )
+        phase1_html_path: Path | None = None
+        phase1_url_path: str | None = None
+        if packet_openable:
+            try:
+                phase1_html_path = _write_fresh_qa_phase1_html(
+                    paths,
+                    source_html_path=html_path,
+                    packet_type=packet_type,
+                    day_index=day_index,
+                )
+                phase1_url_path = _fresh_qa_phase1_url_path(
+                    packet_type=packet_type,
+                    day_index=day_index,
+                )
+            except (OSError, UnicodeDecodeError):
+                packet_openable = False
+                phase1_html_path = None
+                phase1_url_path = None
         selected_packet = {
             "packet_type": packet_type,
             "day_index": day_index,
             "html_path": str(html_path),
             "markdown_path": str(markdown_path),
             "url_path": url_path,
+            "phase1_html_path": str(phase1_html_path) if phase1_html_path else None,
+            "phase1_url_path": phase1_url_path,
             "exists": packet_exists,
             "openable": packet_openable,
         }

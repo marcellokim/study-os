@@ -114,6 +114,29 @@ class FreshQAResultTest(unittest.TestCase):
         result = normalize_fresh_qa_result(payload)
         self.assertEqual("block", result["computed_gate"])
 
+    def test_grading_blocked_requires_block_when_self_grading_impossible(self) -> None:
+        payload = complete_pass_result()
+        payload["failure_type"] = "grading_blocked"
+        payload["phase2_grading"][0]["self_grading_supported"] = False
+        payload["gate"] = "warn"
+
+        with self.assertRaisesRegex(ValueError, "weaker gate"):
+            normalize_fresh_qa_result(payload)
+
+        payload["gate"] = "block"
+        result = normalize_fresh_qa_result(payload)
+        self.assertEqual("block", result["computed_gate"])
+
+    def test_grading_blocked_accepts_warn_when_self_grading_supported(self) -> None:
+        payload = complete_pass_result()
+        payload["failure_type"] = "grading_blocked"
+        payload["phase2_grading"][0]["self_grading_supported"] = True
+        payload["gate"] = "warn"
+
+        result = normalize_fresh_qa_result(payload)
+
+        self.assertEqual("warn", result["computed_gate"])
+
     def test_normalizes_nested_mappings_to_plain_dicts(self) -> None:
         payload = complete_pass_result()
         payload["next_action"] = UserDict({"type": "keep_current_packet"})

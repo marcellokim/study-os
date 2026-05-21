@@ -68,9 +68,17 @@ FAILURE_TYPE_MINIMUM_GATES = {
 }
 
 
-def computed_gate_for(axis_scorecard: dict, *, failure_type: str) -> str:
+def computed_gate_for(
+    axis_scorecard: dict,
+    *,
+    failure_type: str,
+    self_grading_blocked: bool = False,
+) -> str:
     axis_gate = _axis_driven_gate_for(axis_scorecard)
-    failure_gate = FAILURE_TYPE_MINIMUM_GATES[failure_type]
+    failure_gate = _failure_type_gate_for(
+        failure_type,
+        self_grading_blocked=self_grading_blocked,
+    )
     if GATE_STRENGTH[failure_gate] > GATE_STRENGTH[axis_gate]:
         return failure_gate
     return axis_gate
@@ -112,7 +120,13 @@ def normalize_fresh_qa_result(payload: dict) -> dict:
         raise ValueError(f"bad failure_type: {failure_type}")
     normalized["failure_type"] = failure_type
 
-    computed_gate = computed_gate_for(normalized["axis_scorecard"], failure_type=failure_type)
+    computed_gate = computed_gate_for(
+        normalized["axis_scorecard"],
+        failure_type=failure_type,
+        self_grading_blocked=any(
+            entry["self_grading_supported"] is False for entry in normalized["phase2_grading"]
+        ),
+    )
     if GATE_STRENGTH[gate] < GATE_STRENGTH[computed_gate]:
         raise ValueError(f"weaker gate: gate {gate} is weaker than computed gate {computed_gate}")
 
@@ -122,6 +136,12 @@ def normalize_fresh_qa_result(payload: dict) -> dict:
         normalized["axis_scorecard"],
     )
     return normalized
+
+
+def _failure_type_gate_for(failure_type: str, *, self_grading_blocked: bool) -> str:
+    if failure_type == "grading_blocked" and self_grading_blocked:
+        return "block"
+    return FAILURE_TYPE_MINIMUM_GATES[failure_type]
 
 
 def _normalize_container(value: object) -> object:

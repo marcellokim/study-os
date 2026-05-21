@@ -1,10 +1,12 @@
 import json
+from http.client import HTTPConnection
 from pathlib import Path
 import socket
 import subprocess
 import sys
 from tempfile import TemporaryDirectory
 import unittest
+from urllib.parse import urlparse
 
 
 class CliSmokeTest(unittest.TestCase):
@@ -25,6 +27,80 @@ class CliSmokeTest(unittest.TestCase):
             check=False,
         )
         self.assertEqual(completed.returncode, 0, completed.stderr)
+
+    def _post_progress(self, server_url: str, body: dict[str, object]) -> None:
+        parsed = urlparse(server_url)
+        connection = HTTPConnection(parsed.hostname or "127.0.0.1", parsed.port, timeout=5)
+        try:
+            connection.request(
+                "POST",
+                "/api/progress",
+                body=json.dumps(body).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+            )
+            response = connection.getresponse()
+            payload = json.loads(response.read().decode("utf-8"))
+        finally:
+            connection.close()
+
+        self.assertEqual(response.status, 200, payload)
+        self.assertTrue(payload["saved"])
+
+    def _record_packet_progress_through_server(self, workspace: Path) -> None:
+        process = subprocess.Popen(
+            [
+                sys.executable,
+                "-u",
+                "-m",
+                "study_os",
+                "--workspace",
+                str(workspace),
+                "serve-packets",
+                "--course",
+                "sample-course",
+                "--port",
+                "0",
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        try:
+            server_url = process.stdout.readline().strip() if process.stdout is not None else ""
+            self.assertIn("http://127.0.0.1:", server_url)
+            self._post_progress(
+                server_url,
+                {
+                    "packet_type": "learning",
+                    "day_index": 1,
+                    "item_id": "scope_keywords",
+                    "checked": True,
+                },
+            )
+            self._post_progress(
+                server_url,
+                {
+                    "action": "attempt",
+                    "packet_type": "learning",
+                    "day_index": 1,
+                    "item_id": "scope_keywords",
+                    "draft_answer": "Missed one scope keyword.",
+                    "result": "partial",
+                    "confidence_score": 2,
+                    "blocker_type": "memory",
+                },
+            )
+        finally:
+            process.terminate()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=5)
+            if process.stdout is not None:
+                process.stdout.close()
+            if process.stderr is not None:
+                process.stderr.close()
 
     def test_help_lists_core_commands(self) -> None:
         completed = subprocess.run(
@@ -155,42 +231,8 @@ class CliSmokeTest(unittest.TestCase):
         with TemporaryDirectory() as tmp:
             workspace = Path(tmp) / "workspace"
 
-            init_completed = subprocess.run(
-                [
-                    sys.executable,
-                    "-m",
-                    "study_os",
-                    "--workspace",
-                    str(workspace),
-                    "init-course",
-                    "--request-file",
-                    "examples/sample_init_request.json",
-                ],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            self.assertEqual(init_completed.returncode, 0, init_completed.stderr)
-
-            packet_progress_file = workspace / "courses" / "sample-course" / "state" / "packet_progress.yaml"
-            packet_progress_file.write_text(
-                json.dumps(
-                    {
-                        "learning:day:1": {
-                            "scope_keywords": {
-                                "checked": True,
-                                "draft_answer": "Missed one scope keyword.",
-                                "result": "partial",
-                                "confidence_score": 2,
-                                "blocker_type": "memory",
-                            }
-                        }
-                    },
-                    indent=2,
-                )
-                + "\n",
-                encoding="utf-8",
-            )
+            self._init_sample_course(workspace)
+            self._record_packet_progress_through_server(workspace)
 
             completed = subprocess.run(
                 [
@@ -222,6 +264,11 @@ class CliSmokeTest(unittest.TestCase):
             self.assertEqual(payload["reviewed_items"][0]["item_id"], "scope_keywords")
             self.assertEqual(payload["reviewed_items"][0]["confidence"], "low")
             self.assertEqual(payload["reviewed_items"][0]["result"], "partial")
+            self.assertEqual(payload["reviewed_items"][0]["error_code"], "C1")
+            self.assertEqual(
+                payload["reviewed_items"][0]["note"],
+                "blocker=memory; answer=Missed one scope keyword.",
+            )
             self.assertEqual(payload["next_focus"], ["scope_keywords"])
 
     def test_init_course_command_writes_requested_artifacts(self) -> None:

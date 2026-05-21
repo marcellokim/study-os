@@ -1,3 +1,4 @@
+from collections.abc import Mapping
 from copy import deepcopy
 
 
@@ -115,19 +116,25 @@ def normalize_fresh_qa_result(payload: dict) -> dict:
 def _validate_phase1_attempts(attempts: list) -> None:
     if not isinstance(attempts, list):
         raise ValueError("bad phase1_attempts: expected list")
-    for attempt in attempts:
+    for index, attempt in enumerate(attempts):
+        attempt = _require_mapping(attempt, f"phase1_attempts[{index}]")
         for field in PHASE1_ATTEMPT_FIELDS:
             if field not in attempt:
                 raise ValueError(f"missing phase1_attempts field: {field}")
         confidence_score = attempt["confidence_score"]
-        if not isinstance(confidence_score, int) or not 1 <= confidence_score <= 5:
+        if (
+            isinstance(confidence_score, bool)
+            or not isinstance(confidence_score, int)
+            or not 1 <= confidence_score <= 5
+        ):
             raise ValueError(f"bad confidence score: {confidence_score}")
 
 
 def _validate_phase2_grading(entries: list) -> None:
     if not isinstance(entries, list):
         raise ValueError("bad phase2_grading: expected list")
-    for entry in entries:
+    for index, entry in enumerate(entries):
+        entry = _require_mapping(entry, f"phase2_grading[{index}]")
         for field in PHASE2_GRADING_FIELDS:
             if field not in entry:
                 raise ValueError(f"missing phase2_grading field: {field}")
@@ -137,6 +144,12 @@ def _validate_phase2_grading(entries: list) -> None:
         failure_source = entry["failure_source"]
         if failure_source not in FAILURE_SOURCES:
             raise ValueError(f"bad failure_source: {failure_source}")
+
+
+def _require_mapping(value: object, field_name: str) -> Mapping:
+    if not isinstance(value, Mapping):
+        raise ValueError(f"bad {field_name}: expected mapping")
+    return value
 
 
 def _validate_axis_scorecard(axis_scorecard: dict) -> None:

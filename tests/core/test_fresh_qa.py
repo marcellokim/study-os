@@ -76,6 +76,27 @@ class FreshQAResultTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "bad confidence score"):
             normalize_fresh_qa_result(payload)
 
+    def test_rejects_bool_confidence_score(self) -> None:
+        payload = complete_pass_result()
+        payload["phase1_attempts"][0]["confidence_score"] = True
+
+        with self.assertRaisesRegex(ValueError, "bad confidence score"):
+            normalize_fresh_qa_result(payload)
+
+    def test_rejects_malformed_phase1_attempt_row(self) -> None:
+        payload = complete_pass_result()
+        payload["phase1_attempts"] = [None]
+
+        with self.assertRaisesRegex(ValueError, r"bad phase1_attempts\[0\]"):
+            normalize_fresh_qa_result(payload)
+
+    def test_rejects_malformed_phase2_grading_row(self) -> None:
+        payload = complete_pass_result()
+        payload["phase2_grading"] = [3]
+
+        with self.assertRaisesRegex(ValueError, r"bad phase2_grading\[0\]"):
+            normalize_fresh_qa_result(payload)
+
 
 if __name__ == "__main__":
     unittest.main()

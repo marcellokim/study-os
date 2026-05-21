@@ -68,6 +68,19 @@ class FreshQAResultTest(unittest.TestCase):
         self.assertEqual("pass", result["computed_gate"])
         self.assertEqual("positive", result["predicted_answer_rate_effect"])
 
+    def test_normalizes_top_level_mapping_payload_to_plain_dict(self) -> None:
+        result = normalize_fresh_qa_result(UserDict(complete_pass_result()))
+
+        self.assertIs(type(result), dict)
+
+    def test_normalizes_mapping_axis_scorecard_to_plain_dict(self) -> None:
+        payload = complete_pass_result()
+        payload["axis_scorecard"] = UserDict({axis: "OK" for axis in FRESH_QA_AXES})
+
+        result = normalize_fresh_qa_result(payload)
+
+        self.assertIs(type(result["axis_scorecard"]), dict)
+
     def test_rejects_missing_phase2_grading(self) -> None:
         payload = complete_pass_result()
         del payload["phase2_grading"]

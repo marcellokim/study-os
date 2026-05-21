@@ -83,7 +83,7 @@ def predicted_effect_for(gate: str, axis_scorecard: dict) -> str:
 
 def normalize_fresh_qa_result(payload: dict) -> dict:
     _require_mapping(payload, "payload")
-    normalized = deepcopy(payload)
+    normalized = dict(deepcopy(payload))
 
     for field in REQUIRED_FIELDS:
         if field not in normalized:
@@ -93,6 +93,7 @@ def normalize_fresh_qa_result(payload: dict) -> dict:
     _validate_phase1_attempts(normalized["phase1_attempts"])
     _validate_phase2_grading(normalized["phase2_grading"])
     _validate_axis_scorecard(normalized["axis_scorecard"])
+    normalized["axis_scorecard"] = dict(normalized["axis_scorecard"])
 
     gate = normalized["gate"]
 

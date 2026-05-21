@@ -21,6 +21,7 @@ class CliSmokeTest(unittest.TestCase):
         self.assertIn("close-session", completed.stdout)
         self.assertIn("start-final-recall", completed.stdout)
         self.assertIn("status", completed.stdout)
+        self.assertIn("serve-packets", completed.stdout)
         self.assertIn("draft-close-session", completed.stdout)
 
     def test_empty_invocation_prints_help_and_returns_non_zero(self) -> None:
@@ -35,6 +36,38 @@ class CliSmokeTest(unittest.TestCase):
         self.assertIn("usage:", completed.stdout)
         self.assertIn("init-course", completed.stdout)
         self.assertEqual(completed.stderr, "")
+
+    def test_serve_packets_prints_local_url_before_blocking(self) -> None:
+        with TemporaryDirectory() as tmp:
+            workspace = Path(tmp) / "workspace"
+            process = subprocess.Popen(
+                [
+                    sys.executable,
+                    "-u",
+                    "-m",
+                    "study_os",
+                    "--workspace",
+                    str(workspace),
+                    "serve-packets",
+                    "--course",
+                    "operating-systems-midterm",
+                    "--port",
+                    "0",
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            try:
+                line = process.stdout.readline().strip() if process.stdout is not None else ""
+                self.assertIn("http://127.0.0.1:", line)
+            finally:
+                process.terminate()
+                process.wait(timeout=5)
+                if process.stdout is not None:
+                    process.stdout.close()
+                if process.stderr is not None:
+                    process.stderr.close()
 
     def test_draft_close_session_prints_reviewed_items_from_packet_progress(self) -> None:
         with TemporaryDirectory() as tmp:

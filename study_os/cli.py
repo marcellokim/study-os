@@ -7,6 +7,7 @@ import sys
 from typing import Any
 
 from study_os.core.engine import StudyEngine
+from study_os.core.packet_server import PacketServer
 from study_os.core.validation import ValidationError
 
 
@@ -17,6 +18,7 @@ COMMAND_HELP = {
     "draft-close-session": "Build a close-session request draft from saved packet progress.",
     "start-final-recall": "Generate the exam-near final recall pack.",
     "status": "Show a compact course status summary.",
+    "serve-packets": "Serve HTML packets and immediate packet-progress writes for a course.",
 }
 
 
@@ -87,6 +89,10 @@ def build_parser() -> argparse.ArgumentParser:
     status_parser = subparsers.add_parser("status", help=COMMAND_HELP["status"])
     status_parser.add_argument("--course", required=True)
 
+    serve_parser = subparsers.add_parser("serve-packets", help=COMMAND_HELP["serve-packets"])
+    serve_parser.add_argument("--course", required=True)
+    serve_parser.add_argument("--port", type=int, default=8765)
+
     return parser
 
 
@@ -103,8 +109,15 @@ def main(argv: list[str] | None = None) -> int:
     if parsed.command is None:
         parser.error("a command is required")
 
-    engine = StudyEngine(Path(parsed.workspace))
     try:
+        if parsed.command == "serve-packets":
+            server = PacketServer(workspace_root=Path(parsed.workspace), course_slug=parsed.course, port=parsed.port)
+            print(f"http://127.0.0.1:{server.port}", flush=True)
+            server.serve_forever()
+            return 0
+
+        engine = StudyEngine(Path(parsed.workspace))
+
         if parsed.command == "init-course":
             receipt = engine.initialize_course(
                 _load_request_file(parsed.request_file),

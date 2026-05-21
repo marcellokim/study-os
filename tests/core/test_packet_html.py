@@ -1,9 +1,26 @@
 from __future__ import annotations
 
+from html.parser import HTMLParser
+import posixpath
 import unittest
+from urllib.parse import unquote, urlparse
 
 from study_os.core.packet_html import render_packet_html
 from study_os.core.packet_models import PacketEntry, PacketPage, PacketSection, PacketVisual
+
+
+class _ImageSrcParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.srcs: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag != "img":
+            return
+        attrs_by_name = dict(attrs)
+        src = attrs_by_name.get("src")
+        if src is not None:
+            self.srcs.append(src)
 
 
 class PacketHtmlTest(unittest.TestCase):
@@ -276,7 +293,7 @@ class PacketHtmlTest(unittest.TestCase):
         self.assertIn("diagrams/missing diagram.png", html)
         self.assertNotIn('src="/assets/diagrams/missing%20diagram.png"', html)
 
-    def test_visual_asset_url_encodes_dot_segments(self) -> None:
+    def test_visual_asset_url_replaces_dot_segments_before_rendering(self) -> None:
         packet = PacketPage(
             packet_type="learning",
             page_title="Day 01 학습 패킷",
@@ -304,5 +321,18 @@ class PacketHtmlTest(unittest.TestCase):
         html = render_packet_html(packet, packet_links={})
 
         self.assertNotIn('src="/assets/../secret.png"', html)
-        self.assertIn('src="/assets/%2E%2E/secret.png"', html)
+        self.assertNotIn('src="/assets/%2E%2E/secret.png"', html)
+        self.assertIn('src="/assets/_dotdot_/secret.png"', html)
         self.assertIn("../secret.png", html)
+
+        parser = _ImageSrcParser()
+        parser.feed(html)
+        self.assertEqual(parser.srcs, ["/assets/_dotdot_/secret.png"])
+        parsed_path = urlparse(parser.srcs[0]).path
+        normalized_path = posixpath.normpath(unquote(parsed_path))
+        self.assertTrue(
+            normalized_path.startswith("/assets/"),
+            f"{parser.srcs[0]} normalized outside /assets as {normalized_path}",
+        )
+        self.assertNotIn(".", unquote(parsed_path).split("/"))
+        self.assertNotIn("..", unquote(parsed_path).split("/"))

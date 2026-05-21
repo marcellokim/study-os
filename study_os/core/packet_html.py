@@ -31,10 +31,12 @@ def _json_for_script(value: object) -> str:
 def _asset_url(relative_path: str) -> str:
     safe_segments = []
     for segment in relative_path.lstrip("/").split("/"):
+        if not segment:
+            continue
         if segment == ".":
-            safe_segments.append("%2E")
+            safe_segments.append("_dot_")
         elif segment == "..":
-            safe_segments.append("%2E%2E")
+            safe_segments.append("_dotdot_")
         else:
             safe_segments.append(quote(segment, safe="._-~"))
     return "/assets/" + "/".join(safe_segments)

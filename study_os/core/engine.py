@@ -143,8 +143,7 @@ def _packet_item_ids_from_html(html_path: Path) -> tuple[list[str] | None, dict[
         parser.feed(html)
     except Exception:
         return None, {}, False
-    item_ids = list(dict.fromkeys(parser.item_ids))
-    return item_ids, parser.prompts_by_item_id, bool(item_ids)
+    return list(parser.item_ids), parser.prompts_by_item_id, bool(parser.item_ids)
 
 
 def _fresh_qa_packet_paths(paths: CoursePaths, *, packet_type: str, day_index: int) -> tuple[Path, Path, str]:
@@ -465,6 +464,11 @@ class StudyEngine:
             for item_id in (parsed_html_item_ids or [])
             if item_id not in items_by_id
         ]
+        duplicate_packet_item_ids = [
+            item_id
+            for item_id in dict.fromkeys(parsed_html_item_ids or [])
+            if (parsed_html_item_ids or []).count(item_id) > 1
+        ]
         stale_prompt_item_ids = [
             item_id
             for item_id in (parsed_html_item_ids or [])
@@ -476,6 +480,7 @@ class StudyEngine:
             html_path.is_file()
             and html_openable
             and not unknown_packet_item_ids
+            and not duplicate_packet_item_ids
             and not stale_prompt_item_ids
         )
         selected_packet = {

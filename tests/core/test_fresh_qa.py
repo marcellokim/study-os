@@ -46,6 +46,14 @@ def complete_pass_result() -> dict:
     }
 
 
+def add_fix_priority(payload: dict, axis: str = "outcome_measurement") -> None:
+    payload["fix_priority"] = {
+        "summary": "Repair the failed fresh QA axis.",
+        "axis": axis,
+        "recommended_action": "Make the next daily evolution fix specific and testable.",
+    }
+
+
 class FreshQAResultTest(unittest.TestCase):
     def test_accepts_complete_pass_result(self) -> None:
         result = normalize_fresh_qa_result(complete_pass_result())
@@ -57,6 +65,7 @@ class FreshQAResultTest(unittest.TestCase):
     def test_stricter_submitted_gate_controls_predicted_effect(self) -> None:
         payload = complete_pass_result()
         payload["gate"] = "block"
+        add_fix_priority(payload)
 
         result = normalize_fresh_qa_result(payload)
 
@@ -98,6 +107,7 @@ class FreshQAResultTest(unittest.TestCase):
                 payload = complete_pass_result()
                 payload["failure_type"] = failure_type
                 payload["gate"] = submitted_gate
+                add_fix_priority(payload)
 
                 with self.assertRaisesRegex(ValueError, "weaker gate"):
                     normalize_fresh_qa_result(payload)
@@ -111,6 +121,7 @@ class FreshQAResultTest(unittest.TestCase):
         payload["failure_type"] = "grading_blocked"
         payload["axis_scorecard"]["visual_source_connection"] = "BLOCKED"
         payload["gate"] = "warn"
+        add_fix_priority(payload, "visual_source_connection")
 
         with self.assertRaisesRegex(ValueError, "weaker gate"):
             normalize_fresh_qa_result(payload)
@@ -126,6 +137,7 @@ class FreshQAResultTest(unittest.TestCase):
         payload["phase2_grading"][0]["self_grading_supported"] = False
         payload["phase2_grading"][0]["failure_source"] = "rubric"
         payload["gate"] = "warn"
+        add_fix_priority(payload)
 
         with self.assertRaisesRegex(ValueError, "weaker gate"):
             normalize_fresh_qa_result(payload)
@@ -139,6 +151,7 @@ class FreshQAResultTest(unittest.TestCase):
         payload["failure_type"] = "grading_blocked"
         payload["phase2_grading"][0]["self_grading_supported"] = True
         payload["gate"] = "warn"
+        add_fix_priority(payload)
 
         result = normalize_fresh_qa_result(payload)
 
@@ -245,6 +258,7 @@ class FreshQAResultTest(unittest.TestCase):
         payload = complete_pass_result()
         payload["axis_scorecard"]["visual_source_connection"] = "BLOCKED"
         payload["gate"] = "warn"
+        add_fix_priority(payload, "visual_source_connection")
 
         with self.assertRaisesRegex(ValueError, "weaker gate"):
             normalize_fresh_qa_result(payload)
@@ -381,10 +395,29 @@ class FreshQAResultTest(unittest.TestCase):
         payload["axis_scorecard"]["visual_source_connection"] = "BLOCKED"
         payload["axis_scorecard"]["pdf_visual_intake"] = "BLOCKED"
         payload["gate"] = "block"
+        add_fix_priority(payload, "visual_source_connection")
 
         result = normalize_fresh_qa_result(payload)
 
         self.assertEqual("block", result["computed_gate"])
+
+    def test_rejects_non_pass_result_without_actionable_fix_priority(self) -> None:
+        payload = complete_pass_result()
+        payload["axis_scorecard"]["visual_source_connection"] = "BLOCKED"
+        payload["gate"] = "block"
+        payload["fix_priority"] = {}
+
+        with self.assertRaisesRegex(ValueError, "missing fix_priority.axis"):
+            normalize_fresh_qa_result(payload)
+
+    def test_rejects_non_pass_fix_priority_axis_that_is_not_a_failed_axis(self) -> None:
+        payload = complete_pass_result()
+        payload["axis_scorecard"]["visual_source_connection"] = "BLOCKED"
+        payload["gate"] = "block"
+        add_fix_priority(payload, "outcome_measurement")
+
+        with self.assertRaisesRegex(ValueError, "fix_priority.axis must match"):
+            normalize_fresh_qa_result(payload)
 
     def test_select_global_fix_priority_prefers_block_over_warn(self) -> None:
         warn_result = complete_pass_result()
@@ -420,13 +453,21 @@ class FreshQAResultTest(unittest.TestCase):
         earlier_result["axis_scorecard"]["exam_transfer"] = "WEAK"
         earlier_result["gate"] = "warn"
         earlier_result["highest_answer_rate_blocker"] = "Alpha blocker."
-        earlier_result["fix_priority"] = {"summary": "Fix alpha."}
+        earlier_result["fix_priority"] = {
+            "summary": "Fix alpha.",
+            "axis": "exam_transfer",
+            "recommended_action": "Rewrite alpha prompt.",
+        }
         later_result = complete_pass_result()
         later_result["course_slug"] = "zeta-course"
         later_result["axis_scorecard"]["exam_transfer"] = "WEAK"
         later_result["gate"] = "warn"
         later_result["highest_answer_rate_blocker"] = "Zeta blocker."
-        later_result["fix_priority"] = {"summary": "Fix zeta."}
+        later_result["fix_priority"] = {
+            "summary": "Fix zeta.",
+            "axis": "exam_transfer",
+            "recommended_action": "Rewrite zeta prompt.",
+        }
 
         priority = select_global_fix_priority([earlier_result, later_result])
 

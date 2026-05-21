@@ -188,6 +188,28 @@ def _style_block() -> str:
         color: #26352d;
       }
 
+      .packet-answer-support {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fbfcfd;
+      }
+
+      .packet-answer-support summary {
+        cursor: pointer;
+        padding: 10px 12px;
+        color: var(--accent);
+        font-weight: 700;
+      }
+
+      .packet-answer-support[open] {
+        padding-bottom: 10px;
+      }
+
+      .packet-answer-support .packet-answer-key,
+      .packet-answer-support .packet-detail {
+        margin: 0 10px 10px;
+      }
+
       .packet-detail strong {
         display: block;
         margin-bottom: 4px;
@@ -446,19 +468,25 @@ def render_packet_html(packet: PacketPage, *, packet_links: dict[str, str]) -> s
         entry_html: list[str] = []
         for entry in section.entries:
             checked = " checked" if entry.checked else ""
-            answer_key_html = (
-                f'<p class="packet-answer-key"><strong>정답 기준</strong>{escape(entry.answer_key)}</p>'
-                if entry.answer_key
-                else ""
-            )
-            learning_note_html = (
-                f'<p class="packet-detail"><strong>핵심 개념</strong>{escape(entry.learning_note)}</p>'
-                if entry.learning_note
-                else ""
-            )
-            rubric_html = (
-                f'<p class="packet-detail"><strong>채점 기준</strong>{escape(entry.rubric)}</p>'
-                if entry.rubric
+            support_parts: list[str] = []
+            if entry.learning_note:
+                support_parts.append(
+                    f'<p class="packet-detail"><strong>핵심 개념</strong>{escape(entry.learning_note)}</p>'
+                )
+            if entry.answer_key:
+                support_parts.append(
+                    f'<p class="packet-answer-key"><strong>정답 기준</strong>{escape(entry.answer_key)}</p>'
+                )
+            if entry.rubric:
+                support_parts.append(
+                    f'<p class="packet-detail"><strong>채점 기준</strong>{escape(entry.rubric)}</p>'
+                )
+            support_html = (
+                '<details class="packet-answer-support">'
+                "<summary>정답/채점 기준 보기</summary>"
+                + "".join(support_parts)
+                + "</details>"
+                if support_parts
                 else ""
             )
             answer_html = f"""
@@ -500,9 +528,7 @@ def render_packet_html(packet: PacketPage, *, packet_links: dict[str, str]) -> s
                   <div class="packet-entry-body">
                     {answer_html}
                     {attempt_html}
-                    {learning_note_html}
-                    {answer_key_html}
-                    {rubric_html}
+                    {support_html}
                   </div>
                 </article>
                 """

@@ -109,7 +109,11 @@ def normalize_fresh_qa_result(payload: dict) -> dict:
     _validate_phase2_grading(normalized["phase2_grading"])
     _validate_phase_contract(normalized["phase1_attempts"], normalized["phase2_grading"])
     _validate_axis_scorecard(normalized["axis_scorecard"])
-    _validate_fix_priority(normalized["fix_priority"])
+    _validate_fix_priority(
+        normalized["fix_priority"],
+        gate=normalized["gate"],
+        axis_scorecard=normalized["axis_scorecard"],
+    )
     normalized["next_action"] = _normalize_container(normalized["next_action"])
     normalized["fix_priority"] = _normalize_container(normalized["fix_priority"])
     normalized["evidence"] = _normalize_container(normalized["evidence"])
@@ -355,12 +359,25 @@ def _validate_axis_scorecard(axis_scorecard: dict) -> None:
             raise ValueError(f"bad axis value: {axis}={value}")
 
 
-def _validate_fix_priority(fix_priority: Mapping) -> None:
+def _validate_fix_priority(fix_priority: Mapping, *, gate: str, axis_scorecard: Mapping) -> None:
     axis = fix_priority.get("axis")
+    if gate != "pass":
+        for field in ("axis", "summary", "recommended_action"):
+            if field not in fix_priority:
+                raise ValueError(f"missing fix_priority.{field}")
+            _require_non_empty_string(fix_priority[field], f"fix_priority.{field}")
+
     if axis is None:
         return
     if not isinstance(axis, str) or axis not in FRESH_QA_AXES:
         raise ValueError(f"bad fix_priority.axis: {axis}")
+    failed_axes = {
+        axis_name
+        for axis_name, value in axis_scorecard.items()
+        if value in {"BLOCKED", "WEAK", "NOT_CHECKED"}
+    }
+    if gate != "pass" and failed_axes and axis not in failed_axes:
+        raise ValueError(f"fix_priority.axis must match a failed axis: {axis}")
 
 
 def select_global_fix_priority(results: list[dict]) -> dict:

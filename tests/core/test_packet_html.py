@@ -126,6 +126,40 @@ class PacketHtmlTest(unittest.TestCase):
         self.assertIn("draft_answer: textarea.value", html)
         self.assertIn("textarea.disabled = false", html)
 
+    def test_html_hides_answer_key_and_rubric_behind_reveal_boundary(self) -> None:
+        packet = PacketPage(
+            packet_type="learning",
+            page_title="Day 01 학습 패킷",
+            course_slug="operating-systems-midterm",
+            course_name="Operating Systems Midterm",
+            day_index=1,
+            generated_date="2026-05-18",
+            summary_text="summary",
+            sections=[
+                PacketSection(
+                    section_id="items",
+                    title="문항별 학습 카드",
+                    entries=[
+                        PacketEntry(
+                            item_id="paging",
+                            block_id="memory",
+                            prompt="Explain paging.",
+                            answer_key="Maps virtual pages to physical frames.",
+                            rubric="Must mention indirection and fixed-size units.",
+                        )
+                    ],
+                )
+            ],
+        )
+
+        html = render_packet_html(packet, packet_links={})
+
+        self.assertIn('<details class="packet-answer-support"', html)
+        self.assertIn("<summary>정답/채점 기준 보기</summary>", html)
+        self.assertIn("Maps virtual pages to physical frames.", html)
+        self.assertIn("Must mention indirection and fixed-size units.", html)
+        self.assertLess(html.index("<summary>정답/채점 기준 보기</summary>"), html.index("정답 기준"))
+
     def test_html_saves_confidence_score_in_attempt_payload(self) -> None:
         packet = PacketPage(
             packet_type="learning",

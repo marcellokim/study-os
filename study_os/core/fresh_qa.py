@@ -82,19 +82,19 @@ def predicted_effect_for(gate: str, axis_scorecard: dict) -> str:
 
 
 def normalize_fresh_qa_result(payload: dict) -> dict:
+    _require_mapping(payload, "payload")
     normalized = deepcopy(payload)
 
     for field in REQUIRED_FIELDS:
         if field not in normalized:
             raise ValueError(f"missing required field: {field}")
 
+    _validate_top_level_fields(normalized)
     _validate_phase1_attempts(normalized["phase1_attempts"])
     _validate_phase2_grading(normalized["phase2_grading"])
     _validate_axis_scorecard(normalized["axis_scorecard"])
 
     gate = normalized["gate"]
-    if gate not in GATES:
-        raise ValueError(f"bad gate: {gate}")
 
     failure_type = normalized.get("failure_type", "pass")
     if failure_type not in FAILURE_TYPES:
@@ -111,6 +111,22 @@ def normalize_fresh_qa_result(payload: dict) -> dict:
         normalized["axis_scorecard"],
     )
     return normalized
+
+
+def _validate_top_level_fields(payload: Mapping) -> None:
+    _require_non_empty_string(payload["course_slug"], "course_slug")
+    _require_non_empty_string(payload["packet_type"], "packet_type")
+    _require_positive_int_or_none(payload["day_index"], "day_index")
+    _require_mapping(payload["next_action"], "next_action")
+    _require_non_empty_string(
+        payload["highest_answer_rate_blocker"],
+        "highest_answer_rate_blocker",
+    )
+    _require_mapping(payload["fix_priority"], "fix_priority")
+    gate = payload["gate"]
+    if gate not in GATES:
+        raise ValueError(f"bad gate: {gate}")
+    _require_mapping(payload["evidence"], "evidence")
 
 
 def _validate_phase1_attempts(attempts: list) -> None:
@@ -180,6 +196,13 @@ def _require_string(value: object, field_name: str) -> None:
 def _require_non_empty_string(value: object, field_name: str) -> None:
     if not isinstance(value, str) or not value:
         raise ValueError(f"bad {field_name}: expected non-empty string")
+
+
+def _require_positive_int_or_none(value: object, field_name: str) -> None:
+    if value is None:
+        return
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise ValueError(f"bad {field_name}: expected positive int or None")
 
 
 def _require_string_list(value: object, field_name: str) -> None:

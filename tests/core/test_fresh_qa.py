@@ -9,7 +9,7 @@ def complete_pass_result() -> dict:
         "course_slug": "software-engineering-midterm-testflight",
         "packet_type": "recall",
         "day_index": 3,
-        "next_action": "keep_current_packet",
+        "next_action": {"type": "keep_current_packet"},
         "failure_type": "pass",
         "phase1_attempts": [
             {
@@ -34,9 +34,9 @@ def complete_pass_result() -> dict:
         ],
         "axis_scorecard": {axis: "OK" for axis in FRESH_QA_AXES},
         "highest_answer_rate_blocker": "none",
-        "fix_priority": [],
+        "fix_priority": {},
         "gate": "pass",
-        "evidence": ["packet day 3 recall item sequence_diagram_trace"],
+        "evidence": {"summary": "packet day 3 recall item sequence_diagram_trace"},
     }
 
 
@@ -64,6 +64,32 @@ class FreshQAResultTest(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "missing required field: phase2_grading"):
             normalize_fresh_qa_result(payload)
+
+    def test_rejects_non_mapping_top_level_payload(self) -> None:
+        for payload in (None, 3):
+            with self.subTest(payload=payload):
+                with self.assertRaisesRegex(ValueError, "bad payload: expected mapping"):
+                    normalize_fresh_qa_result(payload)
+
+    def test_rejects_invalid_top_level_field_types_and_values(self) -> None:
+        invalid_cases = [
+            ("course_slug", None, "bad course_slug"),
+            ("packet_type", 3, "bad packet_type"),
+            ("day_index", True, "bad day_index"),
+            ("day_index", 0, "bad day_index"),
+            ("next_action", [], "bad next_action"),
+            ("highest_answer_rate_blocker", "", "bad highest_answer_rate_blocker"),
+            ("fix_priority", [3], "bad fix_priority"),
+            ("gate", "hold", "bad gate"),
+            ("evidence", None, "bad evidence"),
+        ]
+        for field, value, message in invalid_cases:
+            with self.subTest(field=field, value=value):
+                payload = complete_pass_result()
+                payload[field] = value
+
+                with self.assertRaisesRegex(ValueError, message):
+                    normalize_fresh_qa_result(payload)
 
     def test_rejects_invalid_axis_value(self) -> None:
         payload = complete_pass_result()

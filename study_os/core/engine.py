@@ -436,16 +436,23 @@ class StudyEngine:
             "openable": packet_openable,
         }
 
+        parsed_packet_item_ids = packet_item_ids if packet_openable and packet_item_ids is not None else []
         if packet_item_ids is None and not html_path.exists():
             packet_item_ids = [entry.item_id for entry in due_entries] if packet_type == "recall" else []
         elif packet_item_ids is None:
             packet_item_ids = []
         packet_item_ids = packet_item_ids[: inspection_budget["max_items"]]
+        phase2_item_ids = parsed_packet_item_ids[: inspection_budget["max_items"]]
 
         items_by_id = {item.item_id: item for item in items}
-        selected_items = [
+        phase1_items = [
             items_by_id[item_id]
             for item_id in packet_item_ids
+            if item_id in items_by_id
+        ]
+        phase2_items = [
+            items_by_id[item_id]
+            for item_id in phase2_item_ids
             if item_id in items_by_id
         ]
 
@@ -477,10 +484,10 @@ class StudyEngine:
             "phase1_context": self._fresh_qa_phase1_context(
                 packet_item_ids=packet_item_ids,
                 selected_packet=selected_packet,
-                items=selected_items,
+                items=phase1_items,
             ),
             "phase2_context": {
-                "items": [_item_phase2_context(item, visuals) for item in selected_items],
+                "items": [_item_phase2_context(item, visuals) for item in phase2_items],
             },
             "result_contract": self._fresh_qa_result_contract(),
         }

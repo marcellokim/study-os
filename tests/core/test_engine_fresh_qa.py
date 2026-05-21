@@ -141,6 +141,7 @@ class EngineFreshQAContextTest(unittest.TestCase):
             self.assertEqual(context["next_action"]["kind"], "packet_blocked")
             self.assertEqual(context["phase1_context"]["packet_item_ids"], [])
             self.assertEqual(context["phase2_context"]["items"], [])
+            self.assertNotIn("Order messages", repr(context["phase2_context"]))
 
     def test_selects_due_recall_and_does_not_fallback_when_recall_packet_missing(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -173,6 +174,8 @@ class EngineFreshQAContextTest(unittest.TestCase):
             self.assertFalse(context["selected_packet"]["openable"])
             self.assertEqual(context["next_action"]["kind"], "packet_blocked")
             self.assertEqual(context["phase1_context"]["packet_item_ids"], ["sequence_diagram_trace"])
+            self.assertEqual(context["phase2_context"]["items"], [])
+            self.assertNotIn("Order messages", repr(context["phase2_context"]))
 
     def test_phase1_excludes_answer_key_and_rubric_phase2_includes_answer_key_and_visuals(self) -> None:
         with TemporaryDirectory() as tmp:

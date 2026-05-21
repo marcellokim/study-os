@@ -196,6 +196,24 @@ class PacketProgressTest(unittest.TestCase):
         )
         self.assertEqual(payload["learning:day:1"]["paging"], {"checked": True})
 
+    def test_set_packet_attempt_preserves_existing_score_derived_confidence_when_legacy_confidence_is_sent(self) -> None:
+        payload = {
+            "learning:day:1": {
+                "paging": {"checked": True, "confidence_score": 5, "confidence": "high"},
+            },
+        }
+
+        updated = set_packet_attempt(
+            payload,
+            packet_type="learning",
+            day_index=1,
+            item_id="paging",
+            confidence="low",
+        )
+
+        self.assertEqual(updated["learning:day:1"]["paging"]["confidence_score"], 5)
+        self.assertEqual(updated["learning:day:1"]["paging"]["confidence"], "high")
+
     def test_set_packet_attempt_rejects_invalid_confidence_score_and_draft_answer(self) -> None:
         with self.assertRaisesRegex(ValueError, "confidence_score"):
             set_packet_attempt(

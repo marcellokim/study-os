@@ -249,6 +249,9 @@ def set_packet_attempt(
     existing = updated[progress_key].get(item_id, {"checked": False})
     checked = existing.get("checked", False)
     _validate_checked(checked)
+    existing_confidence_score = existing.get("confidence_score")
+    if existing_confidence_score is not None:
+        _validate_confidence_score(existing_confidence_score)
     next_item: PacketProgressItem = {**existing, "checked": checked}
     if draft_answer is not None:
         _validate_draft_answer(draft_answer)
@@ -260,9 +263,11 @@ def set_packet_attempt(
         _validate_confidence_score(confidence_score)
         next_item["confidence_score"] = confidence_score
         next_item["confidence"] = confidence_score_to_level(confidence_score)
+    elif existing_confidence_score is not None:
+        next_item["confidence"] = confidence_score_to_level(existing_confidence_score)
     if confidence is not None:
         _validate_confidence(confidence)
-        if confidence_score is None:
+        if confidence_score is None and existing_confidence_score is None:
             next_item["confidence"] = confidence
     if blocker_type is not None:
         _validate_blocker_type(blocker_type)

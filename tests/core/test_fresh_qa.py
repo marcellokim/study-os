@@ -188,6 +188,17 @@ class FreshQAResultTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "bad axis value"):
             normalize_fresh_qa_result(payload)
 
+    def test_rejects_non_string_axis_scorecard_keys(self) -> None:
+        payload = complete_pass_result()
+        payload["axis_scorecard"] = {
+            **{axis: "OK" for axis in FRESH_QA_AXES},
+            1: "OK",
+            None: "OK",
+        }
+
+        with self.assertRaisesRegex(ValueError, "bad axis key"):
+            normalize_fresh_qa_result(payload)
+
     def test_requires_block_gate_when_any_axis_is_blocked(self) -> None:
         payload = complete_pass_result()
         payload["axis_scorecard"]["visual_source_connection"] = "BLOCKED"

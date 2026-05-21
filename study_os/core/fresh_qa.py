@@ -117,10 +117,14 @@ def _validate_phase1_attempts(attempts: list) -> None:
     if not isinstance(attempts, list):
         raise ValueError("bad phase1_attempts: expected list")
     for index, attempt in enumerate(attempts):
-        attempt = _require_mapping(attempt, f"phase1_attempts[{index}]")
+        field_name = f"phase1_attempts[{index}]"
+        attempt = _require_mapping(attempt, field_name)
         for field in PHASE1_ATTEMPT_FIELDS:
             if field not in attempt:
                 raise ValueError(f"missing phase1_attempts field: {field}")
+        _require_non_empty_string(attempt["item_id"], f"{field_name}.item_id")
+        _require_bool(attempt["answerable_from_packet"], f"{field_name}.answerable_from_packet")
+        _require_string(attempt["draft_answer"], f"{field_name}.draft_answer")
         confidence_score = attempt["confidence_score"]
         if (
             isinstance(confidence_score, bool)
@@ -128,19 +132,30 @@ def _validate_phase1_attempts(attempts: list) -> None:
             or not 1 <= confidence_score <= 5
         ):
             raise ValueError(f"bad confidence score: {confidence_score}")
+        _require_string_list(attempt["visible_blockers"], f"{field_name}.visible_blockers")
+        _require_bool(attempt["answer_first_supported"], f"{field_name}.answer_first_supported")
 
 
 def _validate_phase2_grading(entries: list) -> None:
     if not isinstance(entries, list):
         raise ValueError("bad phase2_grading: expected list")
     for index, entry in enumerate(entries):
-        entry = _require_mapping(entry, f"phase2_grading[{index}]")
+        field_name = f"phase2_grading[{index}]"
+        entry = _require_mapping(entry, field_name)
         for field in PHASE2_GRADING_FIELDS:
             if field not in entry:
                 raise ValueError(f"missing phase2_grading field: {field}")
+        _require_non_empty_string(entry["item_id"], f"{field_name}.item_id")
         result = entry["result"]
         if result not in GRADING_RESULTS:
             raise ValueError(f"bad grading result: {result}")
+        _require_non_empty_string(entry["grading_rationale"], f"{field_name}.grading_rationale")
+        _require_bool(entry["self_grading_supported"], f"{field_name}.self_grading_supported")
+        _require_bool(
+            entry["source_connection_supported"],
+            f"{field_name}.source_connection_supported",
+        )
+        _require_non_empty_string(entry["exam_plausibility"], f"{field_name}.exam_plausibility")
         failure_source = entry["failure_source"]
         if failure_source not in FAILURE_SOURCES:
             raise ValueError(f"bad failure_source: {failure_source}")
@@ -150,6 +165,29 @@ def _require_mapping(value: object, field_name: str) -> Mapping:
     if not isinstance(value, Mapping):
         raise ValueError(f"bad {field_name}: expected mapping")
     return value
+
+
+def _require_bool(value: object, field_name: str) -> None:
+    if not isinstance(value, bool):
+        raise ValueError(f"bad {field_name}: expected bool")
+
+
+def _require_string(value: object, field_name: str) -> None:
+    if not isinstance(value, str):
+        raise ValueError(f"bad {field_name}: expected string")
+
+
+def _require_non_empty_string(value: object, field_name: str) -> None:
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"bad {field_name}: expected non-empty string")
+
+
+def _require_string_list(value: object, field_name: str) -> None:
+    if not isinstance(value, list):
+        raise ValueError(f"bad {field_name}: expected list of strings")
+    for index, item in enumerate(value):
+        if not isinstance(item, str):
+            raise ValueError(f"bad {field_name}[{index}]: expected string")
 
 
 def _validate_axis_scorecard(axis_scorecard: dict) -> None:

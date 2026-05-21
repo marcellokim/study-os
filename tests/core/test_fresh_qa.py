@@ -1,3 +1,4 @@
+import re
 import unittest
 
 from study_os.core.fresh_qa import FRESH_QA_AXES, normalize_fresh_qa_result
@@ -106,6 +107,45 @@ class FreshQAResultTest(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, r"bad phase2_grading\[0\]"):
             normalize_fresh_qa_result(payload)
+
+    def test_rejects_invalid_phase1_field_types_and_values(self) -> None:
+        invalid_cases = [
+            ("item_id", "", "bad phase1_attempts[0].item_id"),
+            ("answerable_from_packet", "yes", "bad phase1_attempts[0].answerable_from_packet"),
+            ("draft_answer", None, "bad phase1_attempts[0].draft_answer"),
+            ("visible_blockers", "none", "bad phase1_attempts[0].visible_blockers"),
+            ("visible_blockers", [3], "bad phase1_attempts[0].visible_blockers[0]"),
+            ("answer_first_supported", "yes", "bad phase1_attempts[0].answer_first_supported"),
+        ]
+        for field, value, message in invalid_cases:
+            with self.subTest(field=field, value=value):
+                payload = complete_pass_result()
+                payload["phase1_attempts"][0][field] = value
+
+                with self.assertRaisesRegex(ValueError, re.escape(message)):
+                    normalize_fresh_qa_result(payload)
+
+    def test_rejects_invalid_phase2_field_types_and_values(self) -> None:
+        invalid_cases = [
+            ("item_id", "", "bad phase2_grading[0].item_id"),
+            ("result", "mostly", "bad grading result"),
+            ("grading_rationale", "", "bad phase2_grading[0].grading_rationale"),
+            ("self_grading_supported", "yes", "bad phase2_grading[0].self_grading_supported"),
+            (
+                "source_connection_supported",
+                "yes",
+                "bad phase2_grading[0].source_connection_supported",
+            ),
+            ("exam_plausibility", "", "bad phase2_grading[0].exam_plausibility"),
+            ("failure_source", "notes", "bad failure_source"),
+        ]
+        for field, value, message in invalid_cases:
+            with self.subTest(field=field, value=value):
+                payload = complete_pass_result()
+                payload["phase2_grading"][0][field] = value
+
+                with self.assertRaisesRegex(ValueError, re.escape(message)):
+                    normalize_fresh_qa_result(payload)
 
 
 if __name__ == "__main__":

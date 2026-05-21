@@ -56,6 +56,10 @@ class ValidationTest(unittest.TestCase):
         payload["items"][0]["answer_key"] = "Mention mandatory reuse, optional extension, and dependency direction."
         payload["items"][0]["rubric"] = "Full credit requires both semantics and arrow direction."
         payload["items"][0]["common_mistakes"] = ["Treating include as sequence order."]
+        payload["items"][0]["model_answer"] = "include는 필수 재사용이고 extend는 조건부 확장이다."
+        payload["items"][0]["worked_example"] = "Checkout always includes payment authorization."
+        payload["items"][0]["correction_ladder"] = ["필수 실행 여부를 먼저 판단한다.", "의존 방향을 다시 확인한다."]
+        payload["items"][0]["retrieval_cues"] = ["노트 없이 include와 extend를 비교한다."]
         payload["items"][0]["source_refs"] = ["slides/week06.pdf p.12", "transcript SE-0325"]
 
         request = validate_init_course_request(payload)
@@ -64,6 +68,10 @@ class ValidationTest(unittest.TestCase):
         self.assertEqual(request.blocks[0].study_order, 2)
         self.assertEqual(request.items[0].answer_key, "Mention mandatory reuse, optional extension, and dependency direction.")
         self.assertEqual(request.items[0].common_mistakes, ["Treating include as sequence order."])
+        self.assertEqual(request.items[0].model_answer, "include는 필수 재사용이고 extend는 조건부 확장이다.")
+        self.assertEqual(request.items[0].worked_example, "Checkout always includes payment authorization.")
+        self.assertEqual(request.items[0].correction_ladder, ["필수 실행 여부를 먼저 판단한다.", "의존 방향을 다시 확인한다."])
+        self.assertEqual(request.items[0].retrieval_cues, ["노트 없이 include와 extend를 비교한다."])
         self.assertEqual(request.items[0].source_refs, ["slides/week06.pdf p.12", "transcript SE-0325"])
 
     def test_init_request_rejects_non_string_course_slug(self) -> None:
@@ -187,6 +195,10 @@ class ValidationTest(unittest.TestCase):
         bool_payload["items"][0]["needs_visuals"] = "yes"
         mistakes_payload = self._valid_init_payload()
         mistakes_payload["items"][0]["common_mistakes"] = ["ok", 3]
+        correction_payload = self._valid_init_payload()
+        correction_payload["items"][0]["correction_ladder"] = ["ok", 3]
+        cues_payload = self._valid_init_payload()
+        cues_payload["items"][0]["retrieval_cues"] = "answer before notes"
         refs_payload = self._valid_init_payload()
         refs_payload["items"][0]["source_refs"] = "slides/week06.pdf"
 
@@ -196,6 +208,10 @@ class ValidationTest(unittest.TestCase):
             validate_init_course_request(bool_payload)
         with self.assertRaises(ValidationError):
             validate_init_course_request(mistakes_payload)
+        with self.assertRaises(ValidationError):
+            validate_init_course_request(correction_payload)
+        with self.assertRaises(ValidationError):
+            validate_init_course_request(cues_payload)
         with self.assertRaises(ValidationError):
             validate_init_course_request(refs_payload)
 

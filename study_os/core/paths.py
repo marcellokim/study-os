@@ -25,12 +25,14 @@ class CoursePaths:
     items_file: Path
     mastery_file: Path
     review_queue_file: Path
+    packet_progress_file: Path
     error_log_file: Path
     session_history_file: Path
     source_manifest_file: Path
     visual_requirements_file: Path
     master_plan_file: Path
     final_recall_file: Path
+    final_recall_html_file: Path
 
     def ensure_directories(self) -> None:
         for path in (
@@ -46,6 +48,17 @@ class CoursePaths:
             self.daily_dir,
         ):
             path.mkdir(parents=True, exist_ok=True)
+
+    def learning_packet_html_file(self, *, day_index: int) -> Path:
+        return self._daily_packet_html_file(day_index=day_index, packet_type="learning")
+
+    def recall_packet_html_file(self, *, day_index: int) -> Path:
+        return self._daily_packet_html_file(day_index=day_index, packet_type="recall")
+
+    def _daily_packet_html_file(self, *, day_index: int, packet_type: str) -> Path:
+        if isinstance(day_index, bool) or not isinstance(day_index, int) or day_index <= 0:
+            raise ValueError("day_index must be a positive integer")
+        return self.daily_dir / f"day_{day_index:02d}_{packet_type}.html"
 
 
 def build_course_paths(workspace_root: Path, course_slug: str) -> CoursePaths:
@@ -82,10 +95,12 @@ def build_course_paths(workspace_root: Path, course_slug: str) -> CoursePaths:
         items_file=course_root / "state" / "items.yaml",
         mastery_file=course_root / "state" / "mastery.json",
         review_queue_file=course_root / "state" / "review_queue.yaml",
+        packet_progress_file=course_root / "state" / "packet_progress.yaml",
         error_log_file=course_root / "state" / "error_log.jsonl",
         session_history_file=course_root / "state" / "session_history.jsonl",
         source_manifest_file=course_root / "manifests" / "source_manifest.yaml",
         visual_requirements_file=course_root / "manifests" / "visual_requirements.yaml",
         master_plan_file=course_root / "outputs" / "master_plan.md",
         final_recall_file=course_root / "outputs" / "final_recall_pack.md",
+        final_recall_html_file=course_root / "outputs" / "final_recall_pack.html",
     )

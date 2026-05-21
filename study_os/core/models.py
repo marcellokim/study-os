@@ -41,6 +41,10 @@ class Item:
     answer_key: str = ""
     rubric: str = ""
     common_mistakes: list[str] = field(default_factory=list)
+    model_answer: str = ""
+    worked_example: str = ""
+    correction_ladder: list[str] = field(default_factory=list)
+    retrieval_cues: list[str] = field(default_factory=list)
     source_refs: list[str] = field(default_factory=list)
 
 

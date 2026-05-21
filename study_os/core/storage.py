@@ -4,6 +4,7 @@ from dataclasses import asdict, is_dataclass
 from typing import Any
 
 from study_os.core.json_yaml import append_jsonl, read_json, read_jsonl, read_yamlish, write_json, write_yamlish
+from study_os.core.packet_progress import normalize_packet_progress
 from study_os.core.paths import CoursePaths
 
 
@@ -62,6 +63,14 @@ class CourseStore:
 
     def load_review_queue(self) -> list[dict[str, Any]]:
         return read_yamlish(self.paths.review_queue_file, [])
+
+    def save_packet_progress(self, payload: dict[str, Any]) -> None:
+        normalized = normalize_packet_progress(_dump(payload))
+        write_yamlish(self.paths.packet_progress_file, normalized)
+
+    def load_packet_progress(self) -> dict[str, Any]:
+        payload = read_yamlish(self.paths.packet_progress_file, {})
+        return normalize_packet_progress(payload)
 
     def append_error(self, payload: dict[str, Any]) -> None:
         append_jsonl(self.paths.error_log_file, _dump(payload))

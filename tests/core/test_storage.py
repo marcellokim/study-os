@@ -77,3 +77,62 @@ class StorageTest(unittest.TestCase):
                 store.load_session_history(),
                 [{"session_date": "2026-04-23", "reviewed_items": 3}],
             )
+
+    def test_packet_progress_round_trip(self) -> None:
+        with TemporaryDirectory() as tmp:
+            paths = build_course_paths(Path(tmp), "operating-systems-midterm")
+            paths.ensure_directories()
+            store = CourseStore(paths)
+            payload = {"learning:day:1": {"paging": {"checked": True}}}
+
+            store.save_packet_progress(payload)
+
+            self.assertEqual(store.load_packet_progress(), payload)
+
+    def test_save_packet_progress_rejects_malformed_payload(self) -> None:
+        with TemporaryDirectory() as tmp:
+            paths = build_course_paths(Path(tmp), "operating-systems-midterm")
+            paths.ensure_directories()
+            store = CourseStore(paths)
+
+            with self.assertRaisesRegex(ValueError, "packet_progress"):
+                store.save_packet_progress(
+                    {"learning:day:1": {"paging": {"checked": "yes"}}},
+                )
+
+    def test_save_packet_progress_rejects_bare_daily_packet_key(self) -> None:
+        with TemporaryDirectory() as tmp:
+            paths = build_course_paths(Path(tmp), "operating-systems-midterm")
+            paths.ensure_directories()
+            store = CourseStore(paths)
+
+            with self.assertRaisesRegex(ValueError, "packet_progress"):
+                store.save_packet_progress(
+                    {"learning": {"paging": {"checked": True}}},
+                )
+
+    def test_load_packet_progress_rejects_malformed_payload(self) -> None:
+        with TemporaryDirectory() as tmp:
+            paths = build_course_paths(Path(tmp), "operating-systems-midterm")
+            paths.ensure_directories()
+            store = CourseStore(paths)
+            write_yamlish(
+                paths.packet_progress_file,
+                {"learning:day:1": {"paging": {"checked": "yes"}}},
+            )
+
+            with self.assertRaisesRegex(ValueError, "packet_progress"):
+                store.load_packet_progress()
+
+    def test_load_packet_progress_rejects_malformed_packet_key_namespace(self) -> None:
+        with TemporaryDirectory() as tmp:
+            paths = build_course_paths(Path(tmp), "operating-systems-midterm")
+            paths.ensure_directories()
+            store = CourseStore(paths)
+            write_yamlish(
+                paths.packet_progress_file,
+                {"learning:tomorrow:1": {"paging": {"checked": True}}},
+            )
+
+            with self.assertRaisesRegex(ValueError, "packet_progress"):
+                store.load_packet_progress()

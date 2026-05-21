@@ -134,7 +134,9 @@ class FinalRecallWorkflowTest(unittest.TestCase):
                             "item_id": "include_vs_extend",
                             "block_id": "use_case_diagram",
                             "description": "Need the UML arrow direction diagram.",
-                            "required_image": "uml-use-case-arrow.png",
+                            "required_image": (
+                                "courses/operating-systems-midterm/sources/images/uml-use-case-arrow.png"
+                            ),
                             "status": "available",
                         }
                     ],
@@ -177,5 +179,13 @@ class FinalRecallWorkflowTest(unittest.TestCase):
             html_text = paths.final_recall_html_file.read_text(encoding="utf-8")
 
             self.assertIn("## 필요한 시각자료", pack_text)
-            self.assertIn("- `include_vs_extend`: `uml-use-case-arrow.png` (status: available)", pack_text)
-            self.assertIn('src="/assets/uml-use-case-arrow.png"', html_text)
+            self.assertIn(
+                "- `include_vs_extend`: "
+                "`courses/operating-systems-midterm/sources/images/uml-use-case-arrow.png` "
+                "(status: available)",
+                pack_text,
+            )
+            self.assertIn(
+                'src="/assets/courses/operating-systems-midterm/sources/images/uml-use-case-arrow.png"',
+                html_text,
+            )

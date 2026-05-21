@@ -210,6 +210,10 @@ def validate_init_course_request(payload: dict) -> InitCourseRequest:
         answer_key = _require_optional_string(raw.get("answer_key"), "answer_key")
         rubric = _require_optional_string(raw.get("rubric"), "rubric")
         common_mistakes = _require_optional_string_list(raw.get("common_mistakes"), "common_mistakes")
+        model_answer = _require_optional_string(raw.get("model_answer"), "model_answer")
+        worked_example = _require_optional_string(raw.get("worked_example"), "worked_example")
+        correction_ladder = _require_optional_string_list(raw.get("correction_ladder"), "correction_ladder")
+        retrieval_cues = _require_optional_string_list(raw.get("retrieval_cues"), "retrieval_cues")
         source_refs = _require_optional_string_list(raw.get("source_refs"), "source_refs")
         if block_id not in block_ids:
             raise ValidationError(f"item {item_id} references unknown block {block_id}")
@@ -226,6 +230,10 @@ def validate_init_course_request(payload: dict) -> InitCourseRequest:
                 answer_key=answer_key,
                 rubric=rubric,
                 common_mistakes=common_mistakes,
+                model_answer=model_answer,
+                worked_example=worked_example,
+                correction_ladder=correction_ladder,
+                retrieval_cues=retrieval_cues,
                 source_refs=source_refs,
             )
         )

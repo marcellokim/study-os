@@ -9,7 +9,7 @@ from http.client import HTTPConnection
 from pathlib import Path
 
 from study_os.core.packet_server import PacketServer
-from study_os.core.paths import build_course_paths
+from study_os.core.paths import CoursePaths, build_course_paths
 from study_os.core.storage import CourseStore
 
 
@@ -21,6 +21,12 @@ class PacketServerTest(unittest.TestCase):
         time.sleep(0.1)
         return server, thread
 
+    def _write_learning_packet_html(self, paths: CoursePaths, *, day_index: int = 1, item_id: str = "paging") -> None:
+        paths.learning_packet_html_file(day_index=day_index).write_text(
+            f'<html><article class="packet-entry" data-item-id="{item_id}">Question</article></html>',
+            encoding="utf-8",
+        )
+
     def test_progress_post_persists_checked_state(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             workspace = Path(tmp)
@@ -28,6 +34,7 @@ class PacketServerTest(unittest.TestCase):
             paths.ensure_directories()
             store = CourseStore(paths)
             store.save_packet_progress({})
+            self._write_learning_packet_html(paths)
 
             server, thread = self._start_server(workspace)
 
@@ -63,6 +70,7 @@ class PacketServerTest(unittest.TestCase):
             paths.ensure_directories()
             store = CourseStore(paths)
             store.save_packet_progress({"learning:day:1": {"paging": {"checked": True}}})
+            self._write_learning_packet_html(paths)
 
             server, thread = self._start_server(workspace)
 
@@ -106,6 +114,7 @@ class PacketServerTest(unittest.TestCase):
             paths.ensure_directories()
             store = CourseStore(paths)
             store.save_packet_progress({"learning:day:1": {"paging": {"checked": True}}})
+            self._write_learning_packet_html(paths)
 
             server, thread = self._start_server(workspace)
 
@@ -172,6 +181,7 @@ class PacketServerTest(unittest.TestCase):
             paths.ensure_directories()
             real_store = CourseStore(paths)
             real_store.save_packet_progress({"learning:day:1": {"paging": {"checked": True}}})
+            self._write_learning_packet_html(paths)
             delayed_store = DelayedFirstSaveStore(real_store)
             server = PacketServer(workspace_root=workspace, course_slug="operating-systems-midterm", port=0)
             server.store = delayed_store
@@ -284,7 +294,19 @@ class PacketServerTest(unittest.TestCase):
 
             paths = build_course_paths(workspace, "operating-systems-midterm")
             paths.ensure_directories()
-            CourseStore(paths).save_packet_progress({})
+            store = CourseStore(paths)
+            store.save_packet_progress({})
+            store.save_visual_requirements(
+                [
+                    {
+                        "item_id": "paging",
+                        "block_id": "memory",
+                        "description": "Paging diagram.",
+                        "required_image": "courses/operating-systems-midterm/sources/images/diagram.png",
+                        "status": "available",
+                    }
+                ]
+            )
 
             server, thread = self._start_server(workspace)
 
@@ -301,6 +323,42 @@ class PacketServerTest(unittest.TestCase):
             self.assertEqual(response.status, 200)
             self.assertEqual(body, b"\x89PNG\r\n\x1a\nimage")
             self.assertEqual(content_type, "image/png")
+
+    def test_get_assets_rejects_source_file_not_declared_as_available_visual(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            notes_path = workspace / "courses" / "operating-systems-midterm" / "sources" / "notes" / "private-notes.txt"
+            notes_path.parent.mkdir(parents=True)
+            notes_path.write_text("private notes", encoding="utf-8")
+
+            paths = build_course_paths(workspace, "operating-systems-midterm")
+            paths.ensure_directories()
+            store = CourseStore(paths)
+            store.save_packet_progress({})
+            store.save_visual_requirements(
+                [
+                    {
+                        "item_id": "paging",
+                        "block_id": "memory",
+                        "description": "Paging diagram.",
+                        "required_image": "courses/operating-systems-midterm/sources/images/diagram.png",
+                        "status": "available",
+                    }
+                ]
+            )
+
+            server, thread = self._start_server(workspace)
+
+            connection = HTTPConnection("127.0.0.1", server.port)
+            connection.request("GET", "/assets/courses/operating-systems-midterm/sources/notes/private-notes.txt")
+            response = connection.getresponse()
+            response.read()
+            connection.close()
+
+            server.shutdown()
+            thread.join(timeout=1)
+
+            self.assertEqual(response.status, 404)
 
     def test_get_assets_rejects_course_state_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -538,6 +596,77 @@ class PacketServerTest(unittest.TestCase):
                         "day_index": 1,
                         "item_id": "paging",
                         "checked": "yes",
+                    }
+                ).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+            )
+            response = connection.getresponse()
+            payload = json.loads(response.read().decode("utf-8"))
+            connection.close()
+
+            server.shutdown()
+            thread.join(timeout=1)
+
+            self.assertEqual(response.status, 400)
+            self.assertFalse(payload["saved"])
+            self.assertEqual(store.load_packet_progress(), {})
+
+    def test_progress_post_rejects_unknown_packet_type_without_persisting(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            paths = build_course_paths(workspace, "operating-systems-midterm")
+            paths.ensure_directories()
+            store = CourseStore(paths)
+            store.save_packet_progress({})
+
+            server, thread = self._start_server(workspace)
+
+            connection = HTTPConnection("127.0.0.1", server.port)
+            connection.request(
+                "POST",
+                "/api/progress",
+                body=json.dumps(
+                    {
+                        "packet_type": "made_up",
+                        "day_index": 99,
+                        "item_id": "not_a_course_item",
+                        "checked": True,
+                    }
+                ).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+            )
+            response = connection.getresponse()
+            payload = json.loads(response.read().decode("utf-8"))
+            connection.close()
+
+            server.shutdown()
+            thread.join(timeout=1)
+
+            self.assertEqual(response.status, 400)
+            self.assertFalse(payload["saved"])
+            self.assertEqual(store.load_packet_progress(), {})
+
+    def test_progress_post_rejects_item_not_in_served_packet_without_persisting(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            paths = build_course_paths(workspace, "operating-systems-midterm")
+            paths.ensure_directories()
+            store = CourseStore(paths)
+            store.save_packet_progress({})
+            self._write_learning_packet_html(paths, item_id="paging")
+
+            server, thread = self._start_server(workspace)
+
+            connection = HTTPConnection("127.0.0.1", server.port)
+            connection.request(
+                "POST",
+                "/api/progress",
+                body=json.dumps(
+                    {
+                        "packet_type": "learning",
+                        "day_index": 1,
+                        "item_id": "not_in_packet",
+                        "checked": True,
                     }
                 ).encode("utf-8"),
                 headers={"Content-Type": "application/json"},

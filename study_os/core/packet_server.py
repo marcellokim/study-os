@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import datetime, timezone
+from html.parser import HTMLParser
 from html import escape
 import json
 import mimetypes
@@ -20,6 +21,20 @@ from study_os.core.validation import ValidationError, validate_iso_date_text, va
 
 _CLOSE_SESSION_DRAFT_PACKET_TYPES = frozenset({"learning", "recall", "final_recall"})
 _DAILY_CLOSE_SESSION_DRAFT_PACKET_TYPES = frozenset({"learning", "recall"})
+
+
+class _PacketItemIdParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.item_ids: set[str] = set()
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        del tag
+        attributes = {name: value for name, value in attrs}
+        class_names = set((attributes.get("class") or "").split())
+        item_id = attributes.get("data-item-id")
+        if "packet-entry" in class_names and item_id:
+            self.item_ids.add(item_id)
 
 
 def validate_close_session_draft_params(
@@ -146,13 +161,18 @@ class PacketServer:
 
     def _save_progress_update(self, body: dict[str, object]) -> None:
         with self._progress_lock:
+            packet_type, day_index, item_id = self._validate_progress_target(
+                packet_type=body["packet_type"],
+                day_index=body.get("day_index"),
+                item_id=body["item_id"],
+            )
             payload = self.store.load_packet_progress()
             if body.get("action") == "attempt":
                 updated = set_packet_attempt(
                     payload,
-                    packet_type=body["packet_type"],
-                    day_index=body.get("day_index"),
-                    item_id=body["item_id"],
+                    packet_type=packet_type,
+                    day_index=day_index,
+                    item_id=item_id,
                     draft_answer=body.get("draft_answer"),
                     result=body.get("result"),
                     confidence=body.get("confidence"),
@@ -163,12 +183,44 @@ class PacketServer:
             else:
                 updated = set_packet_checked(
                     payload,
-                    packet_type=body["packet_type"],
-                    day_index=body.get("day_index"),
-                    item_id=body["item_id"],
+                    packet_type=packet_type,
+                    day_index=day_index,
+                    item_id=item_id,
                     checked=body["checked"],
                 )
             self.store.save_packet_progress(updated)
+
+    def _validate_progress_target(
+        self,
+        *,
+        packet_type: object,
+        day_index: object,
+        item_id: object,
+    ) -> tuple[str, int | None, str]:
+        if not isinstance(packet_type, str) or packet_type not in _CLOSE_SESSION_DRAFT_PACKET_TYPES:
+            raise ValidationError("packet_type must be one of: final_recall, learning, recall")
+        if not isinstance(item_id, str) or not item_id:
+            raise ValidationError("item_id must be a non-empty string")
+
+        if packet_type in _DAILY_CLOSE_SESSION_DRAFT_PACKET_TYPES:
+            day_index_value = validate_positive_day_index(day_index)
+            packet_file = self._daily_packet_file(packet_type=packet_type, day_index=day_index_value)
+        else:
+            if day_index is not None:
+                raise ValidationError("day_index must be omitted for final_recall packets")
+            day_index_value = None
+            packet_file = self.paths.final_recall_html_file
+
+        if packet_file is None or not packet_file.exists():
+            raise ValidationError("packet file not found for progress target")
+        if item_id not in self._packet_item_ids(packet_file):
+            raise ValidationError("item_id must exist in the served packet")
+        return packet_type, day_index_value, item_id
+
+    def _packet_item_ids(self, packet_file: Path) -> set[str]:
+        parser = _PacketItemIdParser()
+        parser.feed(packet_file.read_text(encoding="utf-8"))
+        return parser.item_ids
 
     def _resolve_asset_file(self, path: str) -> Path | None:
         prefix = "/assets/"
@@ -193,12 +245,35 @@ class PacketServer:
         return resolved_path
 
     def _is_allowed_asset_path(self, path: Path) -> bool:
-        sources_dir = self.paths.sources_dir.resolve()
-        try:
-            path.relative_to(sources_dir)
-        except ValueError:
+        if not self._is_image_asset_path(path):
             return False
-        return True
+        return path in self._allowed_visual_asset_paths()
+
+    def _is_image_asset_path(self, path: Path) -> bool:
+        content_type = mimetypes.guess_type(path.name)[0]
+        return bool(content_type and content_type.startswith("image/"))
+
+    def _allowed_visual_asset_paths(self) -> set[Path]:
+        workspace_root = self.workspace_root.resolve()
+        allowed_paths: set[Path] = set()
+        for visual in self.store.load_visual_requirements():
+            if visual.get("status") != "available":
+                continue
+            required_image = visual.get("required_image")
+            if not isinstance(required_image, str) or not required_image:
+                continue
+            visual_path = Path(required_image)
+            if visual_path.is_absolute():
+                continue
+            resolved_path = (self.workspace_root / visual_path).resolve(strict=False)
+            try:
+                resolved_path.relative_to(workspace_root)
+            except ValueError:
+                continue
+            if self._is_image_asset_path(resolved_path):
+                allowed_paths.add(resolved_path)
+        return allowed_paths
+
 
     def _close_session_draft_from_query(self, query: str) -> dict[str, object]:
         params = parse_qs(query)

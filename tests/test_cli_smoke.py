@@ -108,6 +108,27 @@ class CliSmokeTest(unittest.TestCase):
             process.stderr.close()
 
     def _record_packet_progress_through_server(self, workspace: Path) -> None:
+        completed = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "study_os",
+                "--workspace",
+                str(workspace),
+                "start-day",
+                "--course",
+                "sample-course",
+                "--day",
+                "1",
+                "--today",
+                "2026-05-21",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+
         process, server_url = self._start_packet_server_process(workspace)
         try:
             self._post_progress(

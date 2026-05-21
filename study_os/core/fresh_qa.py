@@ -59,16 +59,21 @@ PHASE2_GRADING_FIELDS = (
     "failure_source",
 )
 GATE_STRENGTH = {"pass": 0, "warn": 1, "block": 2}
+FAILURE_TYPE_MINIMUM_GATES = {
+    "subagent_failed": "warn",
+    "packet_blocked": "block",
+    "grading_blocked": "warn",
+    "learning_weak": "warn",
+    "pass": "pass",
+}
 
 
 def computed_gate_for(axis_scorecard: dict, *, failure_type: str) -> str:
-    if failure_type == "subagent_failed":
-        return "warn"
-    if any(value == "BLOCKED" for value in axis_scorecard.values()):
-        return "block"
-    if any(value in {"WEAK", "NOT_CHECKED"} for value in axis_scorecard.values()):
-        return "warn"
-    return "pass"
+    axis_gate = _axis_driven_gate_for(axis_scorecard)
+    failure_gate = FAILURE_TYPE_MINIMUM_GATES[failure_type]
+    if GATE_STRENGTH[failure_gate] > GATE_STRENGTH[axis_gate]:
+        return failure_gate
+    return axis_gate
 
 
 def predicted_effect_for(gate: str, axis_scorecard: dict) -> str:
@@ -93,6 +98,11 @@ def normalize_fresh_qa_result(payload: dict) -> dict:
     _validate_phase1_attempts(normalized["phase1_attempts"])
     _validate_phase2_grading(normalized["phase2_grading"])
     _validate_axis_scorecard(normalized["axis_scorecard"])
+    normalized["next_action"] = dict(normalized["next_action"])
+    normalized["fix_priority"] = dict(normalized["fix_priority"])
+    normalized["evidence"] = dict(normalized["evidence"])
+    normalized["phase1_attempts"] = [dict(attempt) for attempt in normalized["phase1_attempts"]]
+    normalized["phase2_grading"] = [dict(entry) for entry in normalized["phase2_grading"]]
     normalized["axis_scorecard"] = dict(normalized["axis_scorecard"])
 
     gate = normalized["gate"]
@@ -112,6 +122,14 @@ def normalize_fresh_qa_result(payload: dict) -> dict:
         normalized["axis_scorecard"],
     )
     return normalized
+
+
+def _axis_driven_gate_for(axis_scorecard: dict) -> str:
+    if any(value == "BLOCKED" for value in axis_scorecard.values()):
+        return "block"
+    if any(value in {"WEAK", "NOT_CHECKED"} for value in axis_scorecard.values()):
+        return "warn"
+    return "pass"
 
 
 def _validate_top_level_fields(payload: Mapping) -> None:

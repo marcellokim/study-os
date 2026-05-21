@@ -81,6 +81,55 @@ class FreshQAResultTest(unittest.TestCase):
 
         self.assertIs(type(result["axis_scorecard"]), dict)
 
+    def test_failure_type_requires_minimum_gate(self) -> None:
+        cases = [
+            ("packet_blocked", "pass", "block"),
+            ("learning_weak", "pass", "warn"),
+            ("grading_blocked", "pass", "warn"),
+            ("subagent_failed", "pass", "warn"),
+        ]
+        for failure_type, submitted_gate, computed_gate in cases:
+            with self.subTest(failure_type=failure_type):
+                payload = complete_pass_result()
+                payload["failure_type"] = failure_type
+                payload["gate"] = submitted_gate
+
+                with self.assertRaisesRegex(ValueError, "weaker gate"):
+                    normalize_fresh_qa_result(payload)
+
+                payload["gate"] = computed_gate
+                result = normalize_fresh_qa_result(payload)
+                self.assertEqual(computed_gate, result["computed_gate"])
+
+    def test_blocked_axis_overrides_warn_failure_type_minimum_gate(self) -> None:
+        payload = complete_pass_result()
+        payload["failure_type"] = "grading_blocked"
+        payload["axis_scorecard"]["visual_source_connection"] = "BLOCKED"
+        payload["gate"] = "warn"
+
+        with self.assertRaisesRegex(ValueError, "weaker gate"):
+            normalize_fresh_qa_result(payload)
+
+        payload["gate"] = "block"
+        result = normalize_fresh_qa_result(payload)
+        self.assertEqual("block", result["computed_gate"])
+
+    def test_normalizes_nested_mappings_to_plain_dicts(self) -> None:
+        payload = complete_pass_result()
+        payload["next_action"] = UserDict({"type": "keep_current_packet"})
+        payload["fix_priority"] = UserDict({"first": "source_connection"})
+        payload["evidence"] = UserDict({"summary": "packet evidence"})
+        payload["phase1_attempts"][0] = UserDict(payload["phase1_attempts"][0])
+        payload["phase2_grading"][0] = UserDict(payload["phase2_grading"][0])
+
+        result = normalize_fresh_qa_result(payload)
+
+        self.assertIs(type(result["next_action"]), dict)
+        self.assertIs(type(result["fix_priority"]), dict)
+        self.assertIs(type(result["evidence"]), dict)
+        self.assertIs(type(result["phase1_attempts"][0]), dict)
+        self.assertIs(type(result["phase2_grading"][0]), dict)
+
     def test_rejects_missing_phase2_grading(self) -> None:
         payload = complete_pass_result()
         del payload["phase2_grading"]

@@ -88,7 +88,7 @@ def predicted_effect_for(gate: str, axis_scorecard: dict) -> str:
 
 def normalize_fresh_qa_result(payload: dict) -> dict:
     _require_mapping(payload, "payload")
-    normalized = dict(deepcopy(payload))
+    normalized = _normalize_container(deepcopy(payload))
 
     for field in REQUIRED_FIELDS:
         if field not in normalized:
@@ -98,12 +98,12 @@ def normalize_fresh_qa_result(payload: dict) -> dict:
     _validate_phase1_attempts(normalized["phase1_attempts"])
     _validate_phase2_grading(normalized["phase2_grading"])
     _validate_axis_scorecard(normalized["axis_scorecard"])
-    normalized["next_action"] = dict(normalized["next_action"])
-    normalized["fix_priority"] = dict(normalized["fix_priority"])
-    normalized["evidence"] = dict(normalized["evidence"])
-    normalized["phase1_attempts"] = [dict(attempt) for attempt in normalized["phase1_attempts"]]
-    normalized["phase2_grading"] = [dict(entry) for entry in normalized["phase2_grading"]]
-    normalized["axis_scorecard"] = dict(normalized["axis_scorecard"])
+    normalized["next_action"] = _normalize_container(normalized["next_action"])
+    normalized["fix_priority"] = _normalize_container(normalized["fix_priority"])
+    normalized["evidence"] = _normalize_container(normalized["evidence"])
+    normalized["phase1_attempts"] = _normalize_container(normalized["phase1_attempts"])
+    normalized["phase2_grading"] = _normalize_container(normalized["phase2_grading"])
+    normalized["axis_scorecard"] = _normalize_container(normalized["axis_scorecard"])
 
     gate = normalized["gate"]
 
@@ -122,6 +122,14 @@ def normalize_fresh_qa_result(payload: dict) -> dict:
         normalized["axis_scorecard"],
     )
     return normalized
+
+
+def _normalize_container(value: object) -> object:
+    if isinstance(value, Mapping):
+        return {key: _normalize_container(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_normalize_container(item) for item in value]
+    return value
 
 
 def _axis_driven_gate_for(axis_scorecard: dict) -> str:

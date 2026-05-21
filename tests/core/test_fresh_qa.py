@@ -130,6 +130,24 @@ class FreshQAResultTest(unittest.TestCase):
         self.assertIs(type(result["phase1_attempts"][0]), dict)
         self.assertIs(type(result["phase2_grading"][0]), dict)
 
+    def test_recursively_normalizes_nested_mappings_to_plain_dicts(self) -> None:
+        payload = complete_pass_result()
+        payload["next_action"] = UserDict({"nested": UserDict({"mode": "repair"})})
+        payload["fix_priority"] = UserDict({"nested": UserDict({"axis": "exam_transfer"})})
+        payload["evidence"] = UserDict({"nested": UserDict({"source": "packet"})})
+        payload["phase1_attempts"][0]["extra"] = UserDict({"nested": UserDict({"tag": "p1"})})
+        payload["phase2_grading"][0]["extra"] = UserDict({"nested": UserDict({"tag": "p2"})})
+
+        result = normalize_fresh_qa_result(payload)
+
+        self.assertIs(type(result["next_action"]["nested"]), dict)
+        self.assertIs(type(result["fix_priority"]["nested"]), dict)
+        self.assertIs(type(result["evidence"]["nested"]), dict)
+        self.assertIs(type(result["phase1_attempts"][0]["extra"]), dict)
+        self.assertIs(type(result["phase1_attempts"][0]["extra"]["nested"]), dict)
+        self.assertIs(type(result["phase2_grading"][0]["extra"]), dict)
+        self.assertIs(type(result["phase2_grading"][0]["extra"]["nested"]), dict)
+
     def test_rejects_missing_phase2_grading(self) -> None:
         payload = complete_pass_result()
         del payload["phase2_grading"]

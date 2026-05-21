@@ -16,11 +16,11 @@ _RESULT_OPTIONS = (
 _BLOCKER_OPTIONS = (
     ("concept", "개념"),
     ("memory", "기억"),
-    ("application", "적용"),
-    ("visual", "시각 자료"),
-    ("wording", "문항 표현"),
-    ("careless", "부주의"),
-    ("unknown", "모름"),
+    ("application", "응용"),
+    ("visual", "시각자료"),
+    ("wording", "표현"),
+    ("careless", "실수"),
+    ("unknown", "불명"),
 )
 
 

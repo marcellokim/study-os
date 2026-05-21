@@ -128,6 +128,20 @@ class EngineFreshQAContextTest(unittest.TestCase):
             self.assertEqual(context["phase1_context"]["packet_item_ids"], ["sequence_diagram_trace", "white_box_branch"])
             self.assertEqual(context["inspection_budget"]["max_items"], 5)
 
+    def test_unreadable_learning_html_blocks_packet_without_deriving_phase2_items(self) -> None:
+        with TemporaryDirectory() as tmp:
+            engine, _store = self._initialized_day_one(tmp)
+            paths = build_course_paths(Path(tmp), "software-engineering-midterm")
+            paths.learning_packet_html_file(day_index=1).write_bytes(b"\xff\xfe\xfa")
+
+            context = engine.build_fresh_qa_context("software-engineering-midterm", today="2026-05-22")
+
+            self.assertTrue(context["selected_packet"]["exists"])
+            self.assertFalse(context["selected_packet"]["openable"])
+            self.assertEqual(context["next_action"]["kind"], "packet_blocked")
+            self.assertEqual(context["phase1_context"]["packet_item_ids"], [])
+            self.assertEqual(context["phase2_context"]["items"], [])
+
     def test_selects_due_recall_and_does_not_fallback_when_recall_packet_missing(self) -> None:
         with TemporaryDirectory() as tmp:
             engine, store = self._initialized_day_one(tmp)

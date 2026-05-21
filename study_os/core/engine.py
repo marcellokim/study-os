@@ -96,17 +96,17 @@ def _review_entry_is_due(entry: QueueEntry, *, day_index: int, today: str) -> bo
     return False
 
 
-def _packet_item_ids_from_html(html_path: Path) -> list[str] | None:
+def _packet_item_ids_from_html(html_path: Path) -> tuple[list[str] | None, bool]:
     try:
         html = html_path.read_text(encoding="utf-8")
-    except OSError:
-        return None
+    except (OSError, UnicodeDecodeError):
+        return None, False
     parser = _PacketItemIdParser()
     try:
         parser.feed(html)
     except Exception:
-        return None
-    return list(dict.fromkeys(parser.item_ids))
+        return None, False
+    return list(dict.fromkeys(parser.item_ids)), True
 
 
 def _fresh_qa_packet_paths(paths: CoursePaths, *, packet_type: str, day_index: int) -> tuple[Path, Path, str]:
@@ -423,8 +423,9 @@ class StudyEngine:
             packet_type=packet_type,
             day_index=day_index,
         )
+        packet_item_ids, html_openable = _packet_item_ids_from_html(html_path)
         packet_exists = html_path.exists() or markdown_path.exists()
-        packet_openable = html_path.is_file()
+        packet_openable = html_path.is_file() and html_openable
         selected_packet = {
             "packet_type": packet_type,
             "day_index": day_index,
@@ -435,9 +436,10 @@ class StudyEngine:
             "openable": packet_openable,
         }
 
-        packet_item_ids = _packet_item_ids_from_html(html_path)
-        if packet_item_ids is None:
+        if packet_item_ids is None and not html_path.exists():
             packet_item_ids = [entry.item_id for entry in due_entries] if packet_type == "recall" else []
+        elif packet_item_ids is None:
+            packet_item_ids = []
         packet_item_ids = packet_item_ids[: inspection_budget["max_items"]]
 
         items_by_id = {item.item_id: item for item in items}

@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+import socket
 import subprocess
 import sys
 from tempfile import TemporaryDirectory
@@ -7,6 +8,24 @@ import unittest
 
 
 class CliSmokeTest(unittest.TestCase):
+    def _init_sample_course(self, workspace: Path) -> None:
+        completed = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "study_os",
+                "--workspace",
+                str(workspace),
+                "init-course",
+                "--request-file",
+                "examples/sample_init_request.json",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+
     def test_help_lists_core_commands(self) -> None:
         completed = subprocess.run(
             [sys.executable, "-m", "study_os", "--help"],
@@ -40,6 +59,8 @@ class CliSmokeTest(unittest.TestCase):
     def test_serve_packets_prints_local_url_before_blocking(self) -> None:
         with TemporaryDirectory() as tmp:
             workspace = Path(tmp) / "workspace"
+            self._init_sample_course(workspace)
+
             process = subprocess.Popen(
                 [
                     sys.executable,
@@ -50,7 +71,7 @@ class CliSmokeTest(unittest.TestCase):
                     str(workspace),
                     "serve-packets",
                     "--course",
-                    "operating-systems-midterm",
+                    "sample-course",
                     "--port",
                     "0",
                 ],
@@ -68,6 +89,67 @@ class CliSmokeTest(unittest.TestCase):
                     process.stdout.close()
                 if process.stderr is not None:
                     process.stderr.close()
+
+    def test_serve_packets_unknown_course_fails_cleanly_without_creating_directories(self) -> None:
+        with TemporaryDirectory() as tmp:
+            workspace = Path(tmp) / "workspace"
+
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "study_os",
+                    "--workspace",
+                    str(workspace),
+                    "serve-packets",
+                    "--course",
+                    "missing-course",
+                    "--port",
+                    "0",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(completed.returncode, 2)
+            self.assertEqual(completed.stdout, "")
+            self.assertIn("error: unknown course_slug: missing-course", completed.stderr)
+            self.assertNotIn("Traceback", completed.stderr)
+            self.assertFalse((workspace / "courses" / "missing-course").exists())
+
+    def test_serve_packets_port_conflict_fails_cleanly_without_traceback(self) -> None:
+        with TemporaryDirectory() as tmp:
+            workspace = Path(tmp) / "workspace"
+            self._init_sample_course(workspace)
+
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as reserved_socket:
+                reserved_socket.bind(("127.0.0.1", 0))
+                reserved_socket.listen(1)
+                port = reserved_socket.getsockname()[1]
+
+                completed = subprocess.run(
+                    [
+                        sys.executable,
+                        "-m",
+                        "study_os",
+                        "--workspace",
+                        str(workspace),
+                        "serve-packets",
+                        "--course",
+                        "sample-course",
+                        "--port",
+                        str(port),
+                    ],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+
+            self.assertEqual(completed.returncode, 2)
+            self.assertEqual(completed.stdout, "")
+            self.assertIn("error: ", completed.stderr)
+            self.assertNotIn("Traceback", completed.stderr)
 
     def test_draft_close_session_prints_reviewed_items_from_packet_progress(self) -> None:
         with TemporaryDirectory() as tmp:

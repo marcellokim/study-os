@@ -8,7 +8,8 @@ from typing import Any
 
 from study_os.core.engine import StudyEngine
 from study_os.core.packet_server import PacketServer
-from study_os.core.validation import ValidationError
+from study_os.core.paths import build_course_paths
+from study_os.core.validation import ValidationError, validate_course_slug_text
 
 
 COMMAND_HELP = {
@@ -46,6 +47,13 @@ def _print_receipt(receipt: Any, *, include_close_session_holds: bool = False) -
             print(f"held-item: {item_id}")
     for path in receipt.generated_files:
         print(path)
+
+
+def _validate_existing_course(workspace_root: Path, course_slug: str) -> None:
+    validate_course_slug_text(course_slug)
+    paths = build_course_paths(workspace_root, course_slug)
+    if not paths.course_file.exists():
+        raise ValidationError(f"unknown course_slug: {course_slug}")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -111,7 +119,13 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         if parsed.command == "serve-packets":
-            server = PacketServer(workspace_root=Path(parsed.workspace), course_slug=parsed.course, port=parsed.port)
+            workspace_root = Path(parsed.workspace)
+            _validate_existing_course(workspace_root, parsed.course)
+            try:
+                server = PacketServer(workspace_root=workspace_root, course_slug=parsed.course, port=parsed.port)
+            except OSError as exc:
+                print(f"error: {exc}", file=sys.stderr)
+                return 2
             print(f"http://127.0.0.1:{server.port}", flush=True)
             server.serve_forever()
             return 0

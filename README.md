@@ -8,11 +8,12 @@ It is designed for exam preparation workflows where private course material shou
 
 - Initializes a course from a structured JSON request.
 - Writes canonical course state under `courses/<course_slug>/state/`.
-- Generates daily learning and recall packets.
+- Generates HTML-first daily learning and recall packets with Markdown fallback exports.
 - Tracks mastery states from session results.
 - Saves per-item draft answers, self-check results, 1-5 confidence scores, blocker types, and checkbox progress immediately without changing mastery state.
 - Builds priority review queues using difficulty, importance, mistakes, confidence, exam proximity, and visual-material blockers.
-- Produces a final recall pack near the exam.
+- Renders evidence-based execution scaffolds for closed-book retrieval, self-explanation, worked examples, correction ladders, and rubric-based result capture.
+- Produces an HTML-first final recall pack near the exam.
 - Serves local packet visuals from the course source tree without copying private assets into the engine repository.
 - Builds close-session request drafts from saved in-packet progress.
 - Validates local source files without copying private PDFs, transcripts, notes, or images into this repository.
@@ -23,8 +24,9 @@ It is designed for exam preparation workflows where private course material shou
 - Standard library only
 - `unittest` test suite
 - JSON-backed state files with `.yaml` filenames for YAML 1.2 compatibility
+- Standard-library localhost packet server for browser-based packet execution
 
-No database, web server, background service, package manager, or cloud account is required.
+No database, background service, package manager, or cloud account is required.
 
 ## Repository Layout
 
@@ -34,6 +36,11 @@ study_os/
   core/
     engine.py             # course initialization, day start, session close, final recall
     packets.py            # markdown packet rendering
+    packet_builder.py     # semantic packet model builders
+    packet_html.py        # browser packet rendering
+    packet_markdown.py    # markdown fallback rendering
+    packet_progress.py    # execution-only checkbox progress state
+    packet_server.py      # localhost packet server and progress API
     scheduler.py          # review queue priority and spacing policy
     transitions.py        # mastery state transitions
     validation.py         # request validation and defensive input checks
@@ -94,6 +101,9 @@ python3 -m study_os --workspace "$tmp_workspace" start-final-recall \
 
 python3 -m study_os --workspace "$tmp_workspace" status \
   --course sample-course
+
+python3 -m study_os --workspace "$tmp_workspace" serve-packets \
+  --course sample-course
 ```
 
 Generated files will be under:
@@ -101,6 +111,8 @@ Generated files will be under:
 ```text
 $tmp_workspace/courses/sample-course/
 ```
+
+`serve-packets` keeps running while you use the browser; stop it with `Ctrl-C` when finished.
 
 ## CLI Commands
 
@@ -111,25 +123,35 @@ python3 -m study_os --help
 Available commands:
 
 - `init-course` - validate a course request and write canonical course state.
-- `start-day` - create daily learning and recall markdown packets.
+- `start-day` - create daily learning and recall HTML packets plus Markdown fallback files.
 - `close-session` - apply reviewed item results and rebuild the review queue.
 - `draft-close-session` - print a JSON close-session request draft from saved packet progress.
-- `start-final-recall` - create the final recall pack.
+- `start-final-recall` - create the final recall HTML packet plus Markdown fallback file.
 - `status` - print tracked item and queue counts.
-
+- `serve-packets` - serve generated HTML packets at `127.0.0.1` and save checkbox progress to course state.
 
 ## HTML Packet Workflow
 
-When using generated HTML packets through the local packet server, work inside each item before closing the session:
+`start-day` and `start-final-recall` now write browser-oriented packet files:
 
-- Write the draft answer.
-- Mark the self-check result as `correct`, `partial`, `wrong`, or `uncertain`.
-- Set confidence from 1 to 5.
-- Mark a blocker type when the miss has a clear cause.
+- `outputs/daily/day_XX_learning.html`
+- `outputs/daily/day_XX_recall.html`
+- `outputs/final_recall_pack.html`
 
-Packet progress is stored in `state/packet_progress.yaml` as execution progress only. Local visual assets are served from the course `sources/` tree, so diagrams can be checked in the browser without copying private source assets into this repository. Mastery state still changes only through `close-session`.
+Open them through the local server so per-item checks are saved immediately:
 
-After packet work, draft a close-session request from saved in-packet progress:
+```bash
+python3 -m study_os \
+  --workspace /Users/<you>/Documents/study-workspace \
+  serve-packets \
+  --course operating-systems-midterm
+```
+
+The command prints a local URL such as `http://127.0.0.1:8765`. Checkbox progress is stored in `state/packet_progress.yaml` and summarized by `status`; it is execution progress only. Mastery state still changes only through `close-session`.
+
+Inside each packet, write the draft answer first, mark the self-check result as `correct`, `partial`, `wrong`, or `uncertain`, set confidence from 1 to 5, and mark a blocker type when the miss has a clear cause. Packet visuals are served from the local course `sources/` tree, so diagrams can be checked in the browser without copying private source assets into this repository.
+
+After packet work, draft a close-session request from the saved in-packet progress:
 
 ```bash
 python3 -m study_os \
@@ -209,6 +231,15 @@ An init request contains:
 
 See [examples/sample_init_request.json](examples/sample_init_request.json).
 
+Items may also include optional execution-quality fields:
+
+- `retrieval_cues` - concrete closed-book prompts to answer before reading support
+- `worked_example` - a solved example or walkthrough
+- `model_answer` - final answer form suitable for recall or exam writing
+- `correction_ladder` - ordered repair steps for wrong or partial answers
+
+The generated packets use these fields to make the learner study directly and then prove the result through `close-session`; they are not meant as chat-only tutoring text. The research rationale is recorded in [docs/evidence-based-study-methods.md](docs/evidence-based-study-methods.md).
+
 Session close requests record reviewed items:
 
 ```json
@@ -273,5 +304,5 @@ Study OS is a local CLI engine rather than a hosted service. The realistic portf
 
 - This repository is an engine and CLI, not a packaged PyPI distribution.
 - The source inventory script does not automatically summarize PDFs or transcripts; decomposition is a separate workflow.
-- No screenshots are included because the project currently has no GUI.
+- The browser packet view is intentionally local and minimal; it is not a hosted web app.
 - No deployment target is included because the project is designed for local CLI use.

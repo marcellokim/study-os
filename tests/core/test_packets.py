@@ -105,6 +105,71 @@ class PacketTest(unittest.TestCase):
         self.assertIn("include를 실행 순서 화살표로 해석함", text)
         self.assertIn("slides/7 Larman Ch6.pdf", text)
 
+    def test_learning_packet_renders_evidence_based_execution_scaffold(self) -> None:
+        supported_item = Item(
+            item_id="sequence_trace",
+            block_id="use_case_diagram",
+            prompt="List every valid trace.",
+            answer_mode="trace-enumeration",
+            difficulty="high",
+            exam_relevance="high",
+            needs_visuals=True,
+            model_answer="strict: ABC. par: ABC, ACB, CAB.",
+            worked_example="operand1 = A B, operand2 = C 이면 par trace는 ABC, ACB, CAB이다.",
+            correction_ladder=[
+                "먼저 operand 내부 순서가 깨진 trace를 지운다.",
+                "그 다음 누락된 interleaving을 추가한다.",
+            ],
+            retrieval_cues=["노트 없이 90초 안에 trace를 전부 쓴다.", "왜 CAB은 되고 CBA는 안 되는지 말한다."],
+        )
+
+        text = build_learning_packet(
+            self.course,
+            1,
+            [self.block],
+            {"use_case_diagram": [supported_item]},
+            [self.visual],
+        )
+
+        self.assertIn("## 학습 실행 루프", text)
+        self.assertIn("1. 노트와 정답을 가리고 먼저 답한다.", text)
+        self.assertIn("## 문항별 학습 카드", text)
+        self.assertIn("- 회상 큐:", text)
+        self.assertIn("노트 없이 90초 안에 trace를 전부 쓴다.", text)
+        self.assertIn("- 대표 예제:", text)
+        self.assertIn("operand1 = A B", text)
+        self.assertIn("- 최종 암기 답안: strict: ABC. par: ABC, ACB, CAB.", text)
+        self.assertIn("- 오답 교정 ladder:", text)
+        self.assertIn("operand 내부 순서가 깨진 trace를 지운다.", text)
+
+    def test_recall_packet_requires_direct_answer_and_close_session_evidence(self) -> None:
+        supported_item = Item(
+            item_id="sequence_trace",
+            block_id="use_case_diagram",
+            prompt="List every valid trace.",
+            answer_mode="trace-enumeration",
+            difficulty="high",
+            exam_relevance="high",
+            needs_visuals=True,
+            answer_key="strict/par 제약을 지키며 모든 trace를 빠짐없이 나열한다.",
+            rubric="완전성 1점, 중복 없음 1점, 제약 준수 1점.",
+            retrieval_cues=["정답을 보기 전에 가능한 trace를 전부 쓴다."],
+        )
+
+        text = build_recall_packet(
+            self.course,
+            1,
+            [],
+            {"sequence_trace": supported_item},
+            [],
+            new_items=[supported_item],
+        )
+
+        self.assertIn("## 검증 방식", text)
+        self.assertIn("채팅으로 설명하지 말고 먼저 별도 답안을 작성한다.", text)
+        self.assertIn("close-session request", text)
+        self.assertIn("정답을 보기 전에 가능한 trace를 전부 쓴다.", text)
+
     def test_recall_packet_renders_same_day_r0_checks_for_new_items(self) -> None:
         supported_item = Item(
             item_id="include_vs_extend",
@@ -157,6 +222,13 @@ class PacketTest(unittest.TestCase):
                 ## 첫 행동
                 - 먼저 `context_switch`에 답하세요: Explain context-switch overhead.
 
+                ## 학습 실행 루프
+                1. 노트와 정답을 가리고 먼저 답한다.
+                2. 답안을 소리 내어 설명하고, 왜 그런지 한 문장으로 자기설명한다.
+                3. 대표 예제나 최종 암기 답안과 대조해 빠진 조건을 표시한다.
+                4. 오답이면 correction ladder를 따라 같은 문항을 즉시 다시 푼다.
+                5. 세션 끝에는 결과, 자신감, error_code, note를 `close-session` 입력으로 남긴다.
+
                 ## 신규 블록
                 ### CPU Scheduling
                 - 블록 유형: mechanism
@@ -172,8 +244,8 @@ class PacketTest(unittest.TestCase):
                 - `include_vs_extend` — Explain include vs extend.
 
                 ## 필요한 시각자료
-                - `round_robin`: `cpu-gantt-chart.png` 필요 — Need the scheduling timeline diagram.
-                - `include_vs_extend`: `uml-use-case-arrow.png` 필요 — Need the use-case arrow direction diagram.
+                - `round_robin`: `cpu-gantt-chart.png` 필요 — Need the scheduling timeline diagram. (status: missing)
+                - `include_vs_extend`: `uml-use-case-arrow.png` 필요 — Need the use-case arrow direction diagram. (status: missing)
 
                 ## 완료 기준
                 - 각 신규 문항을 최소 1회 능동 회상하고, 당일 R0 복습 준비 상태로 만든다.
@@ -237,7 +309,7 @@ class PacketTest(unittest.TestCase):
             },
             [self.visual, self.other_visual],
         )
-        self.assertLess(text.index("`context_switch`"), text.index("`include_vs_extend`"))
+        self.assertLess(text.index("`include_vs_extend`"), text.index("`context_switch`"))
         self.assertLess(text.index("`cpu-gantt-chart.png`"), text.index("`uml-use-case-arrow.png`"))
 
     def test_recall_packet_is_question_first(self) -> None:
@@ -292,7 +364,7 @@ class PacketTest(unittest.TestCase):
             },
             [self.visual, self.other_visual],
         )
-        self.assertLess(text.index("`context_switch`"), text.index("`include_vs_extend`"))
+        self.assertLess(text.index("`include_vs_extend`"), text.index("`context_switch`"))
         self.assertLess(text.index("`cpu-gantt-chart.png`"), text.index("`uml-use-case-arrow.png`"))
         self.assertIn("실수 방지 체크리스트", text)
 

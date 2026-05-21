@@ -97,17 +97,27 @@ class StartDayWorkflowTest(unittest.TestCase):
                     }
                 ]
             )
+            store.save_packet_progress({"learning:day:1": {"include_vs_extend": {"checked": True}}})
 
             receipt = engine.start_day("operating-systems-midterm", day_index=1, today="2026-04-23")
             self.assertEqual(receipt.status, "applied")
             self.assertIn(str(paths.course_file), receipt.generated_files)
+            self.assertIn(str(paths.learning_packet_html_file(day_index=1)), receipt.generated_files)
+            self.assertIn(str(paths.recall_packet_html_file(day_index=1)), receipt.generated_files)
             self.assertTrue(paths.daily_dir.joinpath("day_01_learning.md").exists())
             self.assertTrue(paths.daily_dir.joinpath("day_01_recall.md").exists())
+            self.assertTrue(paths.learning_packet_html_file(day_index=1).exists())
+            self.assertTrue(paths.recall_packet_html_file(day_index=1).exists())
             self.assertEqual(store.load_course()["current_day"], 1)
             self.assertIn("2026-04-23", paths.daily_dir.joinpath("day_01_learning.md").read_text(encoding="utf-8"))
             self.assertIn("2026-04-23", paths.daily_dir.joinpath("day_01_recall.md").read_text(encoding="utf-8"))
             self.assertIn("첫 행동", paths.daily_dir.joinpath("day_01_learning.md").read_text(encoding="utf-8"))
             self.assertIn("즉시 회상", paths.daily_dir.joinpath("day_01_recall.md").read_text(encoding="utf-8"))
+            learning_html = paths.learning_packet_html_file(day_index=1).read_text(encoding="utf-8")
+            recall_html = paths.recall_packet_html_file(day_index=1).read_text(encoding="utf-8")
+            self.assertIn('body data-packet-type="learning"', learning_html)
+            self.assertIn('data-item-id="include_vs_extend" checked', learning_html)
+            self.assertIn('body data-packet-type="recall"', recall_html)
 
     def test_failed_learning_item_reappears_in_next_day_recall(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -308,7 +318,7 @@ class StartDayWorkflowTest(unittest.TestCase):
 
             self.assertFalse(missing_paths.course_root.exists())
 
-    def test_start_day_excludes_available_visuals_from_user_packets(self) -> None:
+    def test_start_day_includes_available_visuals_in_user_packets(self) -> None:
         with TemporaryDirectory() as tmp:
             engine = StudyEngine(Path(tmp))
             engine.initialize_course(
@@ -347,8 +357,16 @@ class StartDayWorkflowTest(unittest.TestCase):
 
             learning_text = paths.daily_dir.joinpath("day_01_learning.md").read_text(encoding="utf-8")
             recall_text = paths.daily_dir.joinpath("day_01_recall.md").read_text(encoding="utf-8")
+            learning_html = paths.learning_packet_html_file(day_index=1).read_text(encoding="utf-8")
+            recall_html = paths.recall_packet_html_file(day_index=1).read_text(encoding="utf-8")
 
-            self.assertIn("## 필요한 시각자료\n- 없음", learning_text)
-            self.assertIn("## 시각자료 게이트 확인\n- 없음", recall_text)
-            self.assertNotIn("uml-use-case-arrow.png", learning_text)
-            self.assertNotIn("uml-use-case-arrow.png", recall_text)
+            self.assertIn(
+                "- `include_vs_extend`: `uml-use-case-arrow.png` 필요 — Need the UML arrow direction diagram. (status: available)",
+                learning_text,
+            )
+            self.assertIn(
+                "- `include_vs_extend`은/는 `uml-use-case-arrow.png` 확인 필요. status: available",
+                recall_text,
+            )
+            self.assertIn('src="/assets/uml-use-case-arrow.png"', learning_html)
+            self.assertIn('src="/assets/uml-use-case-arrow.png"', recall_html)

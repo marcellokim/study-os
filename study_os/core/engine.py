@@ -7,6 +7,13 @@ from typing import Any
 
 from study_os.core.constants import STATUS_ORDER
 from study_os.core.models import Block, CourseConfig, ExecutionReceipt, Item, MasteryRecord, QueueEntry, VisualRequirement
+from study_os.core.packet_builder import (
+    build_final_recall_packet_model,
+    build_learning_packet_model,
+    build_recall_packet_model,
+)
+from study_os.core.packet_html import render_packet_html
+from study_os.core.packet_progress import build_progress_key
 from study_os.core.packets import build_final_recall_pack, build_learning_packet, build_master_plan, build_recall_packet
 from study_os.core.paths import build_course_paths
 from study_os.core.scheduler import build_queue_entry
@@ -41,6 +48,26 @@ def _block_schedule_key(block: Block) -> tuple[bool, int, int, str, str]:
         block.block_name,
         block.block_id,
     )
+
+
+def _checked_progress_for(
+    packet_progress: dict[str, Any],
+    *,
+    packet_type: str,
+    day_index: int | None,
+) -> dict[str, dict[str, Any]]:
+    progress_key = build_progress_key(packet_type=packet_type, day_index=day_index)
+    return {
+        item_id: dict(item_progress)
+        for item_id, item_progress in packet_progress.get(progress_key, {}).items()
+    }
+
+
+def _daily_packet_links(day_index: int) -> dict[str, str]:
+    return {
+        "learning": f"/packets/learning/day/{day_index}",
+        "recall": f"/packets/recall/day/{day_index}",
+    }
 
 
 class StudyEngine:
@@ -112,9 +139,7 @@ class StudyEngine:
         course = CourseConfig(**store.load_course())
         blocks = [Block(**payload) for payload in store.load_blocks()]
         items = [Item(**payload) for payload in store.load_items()]
-        visuals = _pending_visual_requirements(
-            [VisualRequirement(**payload) for payload in store.load_visual_requirements()]
-        )
+        visuals = [VisualRequirement(**payload) for payload in store.load_visual_requirements()]
         review_queue = [QueueEntry(**payload) for payload in store.load_review_queue()]
 
         items_by_block: dict[str, list[Item]] = {}
@@ -139,6 +164,37 @@ class StudyEngine:
 
         learning_file = paths.daily_dir / f"day_{day_index:02d}_learning.md"
         recall_file = paths.daily_dir / f"day_{day_index:02d}_recall.md"
+        packet_progress = store.load_packet_progress()
+        learning_model = build_learning_packet_model(
+            course,
+            day_index,
+            selected_blocks,
+            items_by_block,
+            selected_visuals,
+            today=today,
+            progress_by_item=_checked_progress_for(packet_progress, packet_type="learning", day_index=day_index),
+        )
+        recall_model = build_recall_packet_model(
+            course,
+            day_index,
+            due_review_entries,
+            items_by_id,
+            selected_visuals,
+            today=today,
+            progress_by_item=_checked_progress_for(packet_progress, packet_type="recall", day_index=day_index),
+            new_items=[item for block in selected_blocks for item in items_by_block.get(block.block_id, [])],
+        )
+        packet_links = _daily_packet_links(day_index)
+        learning_html_file = paths.learning_packet_html_file(day_index=day_index)
+        recall_html_file = paths.recall_packet_html_file(day_index=day_index)
+        learning_html_file.write_text(
+            render_packet_html(learning_model, packet_links=packet_links),
+            encoding="utf-8",
+        )
+        recall_html_file.write_text(
+            render_packet_html(recall_model, packet_links=packet_links),
+            encoding="utf-8",
+        )
         learning_file.write_text(
             build_learning_packet(course, day_index, selected_blocks, items_by_block, selected_visuals, today=today),
             encoding="utf-8",
@@ -169,7 +225,13 @@ class StudyEngine:
             status="applied",
             applied_items=applied_items,
             held_items=[],
-            generated_files=[str(paths.course_file), str(learning_file), str(recall_file)],
+            generated_files=[
+                str(paths.course_file),
+                str(learning_html_file),
+                str(recall_html_file),
+                str(learning_file),
+                str(recall_file),
+            ],
             warnings=[],
         )
 
@@ -312,9 +374,7 @@ class StudyEngine:
         course = CourseConfig(**store.load_course())
         blocks = {row["block_id"]: Block(**row) for row in store.load_blocks()}
         items = {row["item_id"]: Item(**row) for row in store.load_items()}
-        visuals = _pending_visual_requirements(
-            [VisualRequirement(**row) for row in store.load_visual_requirements()]
-        )
+        visuals = [VisualRequirement(**row) for row in store.load_visual_requirements()]
         queue = [QueueEntry(**row) for row in store.load_review_queue()]
 
         ranked_queue = sorted(
@@ -327,7 +387,21 @@ class StudyEngine:
         )
         relevant_item_ids = {entry.item_id for entry in ranked_queue}
         ranked_visuals = [visual for visual in visuals if visual.item_id in relevant_item_ids]
+        packet_progress = store.load_packet_progress()
+        final_model = build_final_recall_packet_model(
+            course,
+            ranked_queue,
+            items,
+            blocks,
+            ranked_visuals,
+            today=today,
+            progress_by_item=_checked_progress_for(packet_progress, packet_type="final_recall", day_index=None),
+        )
 
+        paths.final_recall_html_file.write_text(
+            render_packet_html(final_model, packet_links={"final_recall": "/packets/final-recall"}),
+            encoding="utf-8",
+        )
         paths.final_recall_file.write_text(
             build_final_recall_pack(course, ranked_queue, items, blocks, ranked_visuals, today=today),
             encoding="utf-8",
@@ -337,7 +411,7 @@ class StudyEngine:
             status="applied",
             applied_items=[entry.item_id for entry in ranked_queue],
             held_items=[],
-            generated_files=[str(paths.final_recall_file)],
+            generated_files=[str(paths.final_recall_html_file), str(paths.final_recall_file)],
             warnings=[],
         )
 
@@ -349,6 +423,13 @@ class StudyEngine:
 
         store = CourseStore(paths)
         mastery = store.load_mastery()
+        packet_progress = store.load_packet_progress()
+        checked_packet_entries = sum(
+            1
+            for packet_items in packet_progress.values()
+            for item_progress in packet_items.values()
+            if item_progress["checked"]
+        )
         queue = [
             QueueEntry(**row)
             for row in sorted(
@@ -365,6 +446,7 @@ class StudyEngine:
             f"Course: {course_slug}",
             f"Tracked items: {len(mastery)}",
             f"Queued items: {len(queue)}",
+            f"Checked packet entries: {checked_packet_entries}",
             "Top queue entries:",
         ]
         if not queue:

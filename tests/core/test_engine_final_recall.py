@@ -76,19 +76,26 @@ class FinalRecallWorkflowTest(unittest.TestCase):
                     }
                 ]
             )
+            store.save_packet_progress({"final_recall": {"include_vs_extend": {"checked": True}}})
 
             receipt = engine.start_final_recall("operating-systems-midterm", today="2026-04-23")
             summary = engine.status("operating-systems-midterm")
             pack_text = paths.final_recall_file.read_text(encoding="utf-8")
+            html_text = paths.final_recall_html_file.read_text(encoding="utf-8")
 
             self.assertEqual(receipt.status, "applied")
             self.assertTrue(paths.final_recall_file.exists())
+            self.assertTrue(paths.final_recall_html_file.exists())
+            self.assertIn(str(paths.final_recall_html_file), receipt.generated_files)
             self.assertIn("최종 회상 팩", pack_text)
             self.assertIn("- 생성일: 2026-04-23", pack_text)
+            self.assertIn('body data-packet-type="final_recall"', html_text)
+            self.assertIn('data-item-id="include_vs_extend" checked', html_text)
             self.assertIn("include_vs_extend", summary)
             self.assertIn("FINAL", summary)
+            self.assertIn("Checked packet entries: 1", summary)
 
-    def test_start_final_recall_excludes_available_visuals_from_pack(self) -> None:
+    def test_start_final_recall_includes_available_visuals_in_pack(self) -> None:
         with TemporaryDirectory() as tmp:
             engine = StudyEngine(Path(tmp))
             engine.initialize_course(
@@ -167,6 +174,8 @@ class FinalRecallWorkflowTest(unittest.TestCase):
             engine.start_final_recall("operating-systems-midterm", today="2026-04-23")
 
             pack_text = paths.final_recall_file.read_text(encoding="utf-8")
+            html_text = paths.final_recall_html_file.read_text(encoding="utf-8")
 
-            self.assertNotIn("## 필요한 시각자료", pack_text)
-            self.assertNotIn("uml-use-case-arrow.png", pack_text)
+            self.assertIn("## 필요한 시각자료", pack_text)
+            self.assertIn("- `include_vs_extend`: `uml-use-case-arrow.png` (status: available)", pack_text)
+            self.assertIn('src="/assets/uml-use-case-arrow.png"', html_text)

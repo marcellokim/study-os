@@ -128,6 +128,23 @@ class EngineFreshQAContextTest(unittest.TestCase):
             self.assertEqual(context["phase1_context"]["packet_item_ids"], ["sequence_diagram_trace", "white_box_branch"])
             self.assertEqual(context["inspection_budget"]["max_items"], 5)
 
+    def test_structurally_corrupt_learning_html_blocks_packet_without_phase2_items(self) -> None:
+        with TemporaryDirectory() as tmp:
+            engine, _store = self._initialized_day_one(tmp)
+            paths = build_course_paths(Path(tmp), "software-engineering-midterm")
+            paths.learning_packet_html_file(day_index=1).write_text(
+                "<html><body>No packet entries</body></html>",
+                encoding="utf-8",
+            )
+
+            context = engine.build_fresh_qa_context("software-engineering-midterm", today="2026-05-22")
+
+            self.assertTrue(context["selected_packet"]["exists"])
+            self.assertFalse(context["selected_packet"]["openable"])
+            self.assertEqual(context["next_action"]["kind"], "packet_blocked")
+            self.assertEqual(context["phase1_context"]["packet_item_ids"], [])
+            self.assertEqual(context["phase2_context"]["items"], [])
+
     def test_unreadable_learning_html_blocks_packet_without_deriving_phase2_items(self) -> None:
         with TemporaryDirectory() as tmp:
             engine, _store = self._initialized_day_one(tmp)
@@ -173,7 +190,7 @@ class EngineFreshQAContextTest(unittest.TestCase):
             self.assertFalse(context["selected_packet"]["exists"])
             self.assertFalse(context["selected_packet"]["openable"])
             self.assertEqual(context["next_action"]["kind"], "packet_blocked")
-            self.assertEqual(context["phase1_context"]["packet_item_ids"], ["sequence_diagram_trace"])
+            self.assertEqual(context["phase1_context"]["packet_item_ids"], [])
             self.assertEqual(context["phase2_context"]["items"], [])
             self.assertNotIn("Order messages", repr(context["phase2_context"]))
 
@@ -191,6 +208,7 @@ class EngineFreshQAContextTest(unittest.TestCase):
                 "common_mistakes",
                 "model_answer",
                 "worked_example",
+                "correction_ladder",
                 "source_refs",
             }
             self.assertTrue(forbidden.isdisjoint(phase1_item))
@@ -199,6 +217,32 @@ class EngineFreshQAContextTest(unittest.TestCase):
             self.assertEqual(
                 phase2_item["visual_requirements"][0]["required_image"],
                 "sequence-diagram.png",
+            )
+
+    def test_phase1_context_can_be_passed_without_full_paths_or_answer_support(self) -> None:
+        with TemporaryDirectory() as tmp:
+            engine, _store = self._initialized_day_one(tmp)
+
+            context = engine.build_fresh_qa_context("software-engineering-midterm", today="2026-05-22")
+
+            phase1_text = repr(context["phase1_context"])
+            self.assertNotIn("html_path", phase1_text)
+            self.assertNotIn("markdown_path", phase1_text)
+            self.assertNotIn("url_path", phase1_text)
+            self.assertNotIn("/packets/learning/day/1", phase1_text)
+            self.assertNotIn("day_01_learning", phase1_text)
+            self.assertNotIn("answer_key", phase1_text)
+            self.assertNotIn("rubric", phase1_text)
+            self.assertNotIn("common_mistakes", phase1_text)
+            self.assertNotIn("model_answer", phase1_text)
+            self.assertNotIn("worked_example", phase1_text)
+            self.assertNotIn("correction_ladder", phase1_text)
+            self.assertNotIn("source_refs", phase1_text)
+            self.assertNotIn("Order messages and include the guard condition.", phase1_text)
+            self.assertNotIn("Full credit requires order, guard, and actor responsibility.", phase1_text)
+            self.assertEqual(
+                context["phase1_context"]["visual_requirements"][0]["description"],
+                "Sequence diagram with guard condition.",
             )
 
     def test_phase2_context_is_limited_to_selected_packet_items_not_whole_course(self) -> None:

@@ -106,7 +106,8 @@ def _packet_item_ids_from_html(html_path: Path) -> tuple[list[str] | None, bool]
         parser.feed(html)
     except Exception:
         return None, False
-    return list(dict.fromkeys(parser.item_ids)), True
+    item_ids = list(dict.fromkeys(parser.item_ids))
+    return item_ids, bool(item_ids)
 
 
 def _fresh_qa_packet_paths(paths: CoursePaths, *, packet_type: str, day_index: int) -> tuple[Path, Path, str]:
@@ -129,11 +130,7 @@ def _item_phase1_context(item: Item) -> dict[str, Any]:
         "block_id": item.block_id,
         "prompt": item.prompt,
         "answer_mode": item.answer_mode,
-        "difficulty": item.difficulty,
-        "exam_relevance": item.exam_relevance,
         "needs_visuals": item.needs_visuals,
-        "learning_note": item.learning_note,
-        "retrieval_cues": list(item.retrieval_cues),
     }
 
 
@@ -410,8 +407,9 @@ class StudyEngine:
                 "review_pressure": review_pressure,
                 "inspection_budget": inspection_budget,
                 "phase1_context": self._fresh_qa_phase1_context(
+                    packet_type=None,
+                    day_index=None,
                     packet_item_ids=[],
-                    selected_packet={},
                 ),
                 "phase2_context": {"items": []},
                 "result_contract": self._fresh_qa_result_contract(),
@@ -437,11 +435,7 @@ class StudyEngine:
         }
 
         parsed_packet_item_ids = packet_item_ids if packet_openable and packet_item_ids is not None else []
-        if packet_item_ids is None and not html_path.exists():
-            packet_item_ids = [entry.item_id for entry in due_entries] if packet_type == "recall" else []
-        elif packet_item_ids is None:
-            packet_item_ids = []
-        packet_item_ids = packet_item_ids[: inspection_budget["max_items"]]
+        packet_item_ids = parsed_packet_item_ids[: inspection_budget["max_items"]]
         phase2_item_ids = parsed_packet_item_ids[: inspection_budget["max_items"]]
 
         items_by_id = {item.item_id: item for item in items}
@@ -482,9 +476,11 @@ class StudyEngine:
             "review_pressure": review_pressure,
             "inspection_budget": inspection_budget,
             "phase1_context": self._fresh_qa_phase1_context(
+                packet_type=packet_type,
+                day_index=day_index,
                 packet_item_ids=packet_item_ids,
-                selected_packet=selected_packet,
                 items=phase1_items,
+                visuals=visuals,
             ),
             "phase2_context": {
                 "items": [_item_phase2_context(item, visuals) for item in phase2_items],
@@ -763,23 +759,30 @@ class StudyEngine:
     def _fresh_qa_phase1_context(
         self,
         *,
+        packet_type: str | None = None,
+        day_index: int | None = None,
         packet_item_ids: list[str],
-        selected_packet: dict[str, Any],
         items: list[Item] | None = None,
+        visuals: list[VisualRequirement] | None = None,
     ) -> dict[str, Any]:
+        selected_item_ids = set(packet_item_ids)
         return {
             "packet": {
-                "html_path": selected_packet.get("html_path"),
-                "markdown_path": selected_packet.get("markdown_path"),
-                "url_path": selected_packet.get("url_path"),
+                "packet_type": packet_type,
+                "day_index": day_index,
             },
             "instructions": [
-                "Attempt answers from the selected packet only.",
-                "Do not inspect answer keys, rubrics, common mistakes, model answers, worked examples, or source references.",
-                "Record blockers that prevent answering from visible packet content.",
+                "Attempt answers from the safe learner-facing context only.",
+                "Do not inspect grading materials or source support before Phase 2.",
+                "Record blockers that prevent answering from the visible learner prompt.",
             ],
             "packet_item_ids": list(packet_item_ids),
             "items": [_item_phase1_context(item) for item in (items or [])],
+            "visual_requirements": [
+                _visual_payload(visual)
+                for visual in (visuals or [])
+                if visual.item_id in selected_item_ids
+            ],
         }
 
     def _fresh_qa_result_contract(self) -> dict[str, Any]:

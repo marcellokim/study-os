@@ -107,7 +107,7 @@ def normalize_fresh_qa_result(payload: dict) -> dict:
 
     normalized["computed_gate"] = computed_gate
     normalized["predicted_answer_rate_effect"] = predicted_effect_for(
-        computed_gate,
+        gate,
         normalized["axis_scorecard"],
     )
     return normalized

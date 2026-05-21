@@ -47,6 +47,16 @@ class FreshQAResultTest(unittest.TestCase):
         self.assertEqual("positive", result["predicted_answer_rate_effect"])
         self.assertEqual({axis: "OK" for axis in FRESH_QA_AXES}, result["axis_scorecard"])
 
+    def test_stricter_submitted_gate_controls_predicted_effect(self) -> None:
+        payload = complete_pass_result()
+        payload["gate"] = "block"
+
+        result = normalize_fresh_qa_result(payload)
+
+        self.assertEqual("block", result["gate"])
+        self.assertEqual("pass", result["computed_gate"])
+        self.assertEqual("negative", result["predicted_answer_rate_effect"])
+
     def test_rejects_missing_phase2_grading(self) -> None:
         payload = complete_pass_result()
         del payload["phase2_grading"]

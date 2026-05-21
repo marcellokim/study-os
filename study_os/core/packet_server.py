@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from html import escape
 import json
 import mimetypes
+import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
@@ -23,6 +24,7 @@ class PacketServer:
         self.paths = build_course_paths(workspace_root, course_slug)
         self.paths.ensure_directories()
         self.store = CourseStore(self.paths)
+        self._progress_lock = threading.Lock()
         self._server = ThreadingHTTPServer(("127.0.0.1", port), self._build_handler())
 
     @property
@@ -73,29 +75,7 @@ class PacketServer:
                 try:
                     length = int(self.headers.get("Content-Length", "0"))
                     body = json.loads(self.rfile.read(length).decode("utf-8"))
-                    payload = parent.store.load_packet_progress()
-                    if body.get("action") == "attempt":
-                        updated = set_packet_attempt(
-                            payload,
-                            packet_type=body["packet_type"],
-                            day_index=body.get("day_index"),
-                            item_id=body["item_id"],
-                            draft_answer=body.get("draft_answer"),
-                            result=body.get("result"),
-                            confidence=body.get("confidence"),
-                            confidence_score=body.get("confidence_score"),
-                            blocker_type=body.get("blocker_type"),
-                            checked_at=body.get("checked_at") or parent._utc_timestamp(),
-                        )
-                    else:
-                        updated = set_packet_checked(
-                            payload,
-                            packet_type=body["packet_type"],
-                            day_index=body.get("day_index"),
-                            item_id=body["item_id"],
-                            checked=body["checked"],
-                        )
-                    parent.store.save_packet_progress(updated)
+                    parent._save_progress_update(body)
                 except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
                     self._write_json({"saved": False, "error": str(exc)}, status=400)
                     return
@@ -135,6 +115,32 @@ class PacketServer:
     def _utc_timestamp(self) -> str:
         return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
 
+    def _save_progress_update(self, body: dict[str, object]) -> None:
+        with self._progress_lock:
+            payload = self.store.load_packet_progress()
+            if body.get("action") == "attempt":
+                updated = set_packet_attempt(
+                    payload,
+                    packet_type=body["packet_type"],
+                    day_index=body.get("day_index"),
+                    item_id=body["item_id"],
+                    draft_answer=body.get("draft_answer"),
+                    result=body.get("result"),
+                    confidence=body.get("confidence"),
+                    confidence_score=body.get("confidence_score"),
+                    blocker_type=body.get("blocker_type"),
+                    checked_at=body.get("checked_at") or self._utc_timestamp(),
+                )
+            else:
+                updated = set_packet_checked(
+                    payload,
+                    packet_type=body["packet_type"],
+                    day_index=body.get("day_index"),
+                    item_id=body["item_id"],
+                    checked=body["checked"],
+                )
+            self.store.save_packet_progress(updated)
+
     def _resolve_asset_file(self, path: str) -> Path | None:
         prefix = "/assets/"
         if not path.startswith(prefix):
@@ -151,9 +157,19 @@ class PacketServer:
         except ValueError:
             return None
 
+        if not self._is_allowed_asset_path(resolved_path):
+            return None
         if not resolved_path.exists() or not resolved_path.is_file():
             return None
         return resolved_path
+
+    def _is_allowed_asset_path(self, path: Path) -> bool:
+        sources_dir = self.paths.sources_dir.resolve()
+        try:
+            path.relative_to(sources_dir)
+        except ValueError:
+            return False
+        return True
 
     def _close_session_draft_from_query(self, query: str) -> dict[str, object]:
         params = parse_qs(query)

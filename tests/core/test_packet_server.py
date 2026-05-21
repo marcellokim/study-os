@@ -145,6 +145,95 @@ class PacketServerTest(unittest.TestCase):
             self.assertIn("checked_at", saved)
             self.assertTrue(str(saved["checked_at"]).endswith("Z"))
 
+    def test_overlapping_attempt_saves_merge_fields(self) -> None:
+        class DelayedFirstSaveStore:
+            def __init__(self, real_store: CourseStore) -> None:
+                self.real_store = real_store
+                self.first_save_entered = threading.Event()
+                self.release_first_save = threading.Event()
+                self._save_lock = threading.Lock()
+                self._save_count = 0
+
+            def load_packet_progress(self) -> dict[str, object]:
+                return self.real_store.load_packet_progress()
+
+            def save_packet_progress(self, payload: dict[str, object]) -> None:
+                with self._save_lock:
+                    self._save_count += 1
+                    is_first_save = self._save_count == 1
+                if is_first_save:
+                    self.first_save_entered.set()
+                    self.release_first_save.wait(timeout=2)
+                self.real_store.save_packet_progress(payload)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            paths = build_course_paths(workspace, "operating-systems-midterm")
+            paths.ensure_directories()
+            real_store = CourseStore(paths)
+            real_store.save_packet_progress({"learning:day:1": {"paging": {"checked": True}}})
+            delayed_store = DelayedFirstSaveStore(real_store)
+            server = PacketServer(workspace_root=workspace, course_slug="operating-systems-midterm", port=0)
+            server.store = delayed_store
+            result_thread_started = threading.Event()
+            errors: list[BaseException] = []
+
+            def save_draft() -> None:
+                try:
+                    server._save_progress_update(
+                        {
+                            "action": "attempt",
+                            "packet_type": "learning",
+                            "day_index": 1,
+                            "item_id": "paging",
+                            "draft_answer": "Paging maps pages.",
+                            "checked_at": "2026-05-21T10:00:00Z",
+                        }
+                    )
+                except BaseException as exc:
+                    errors.append(exc)
+
+            def save_result() -> None:
+                result_thread_started.set()
+                try:
+                    server._save_progress_update(
+                        {
+                            "action": "attempt",
+                            "packet_type": "learning",
+                            "day_index": 1,
+                            "item_id": "paging",
+                            "result": "partial",
+                            "confidence_score": 2,
+                            "blocker_type": "concept",
+                            "checked_at": "2026-05-21T10:00:01Z",
+                        }
+                    )
+                except BaseException as exc:
+                    errors.append(exc)
+
+            draft_thread = threading.Thread(target=save_draft)
+            result_thread = threading.Thread(target=save_result)
+
+            draft_thread.start()
+            self.assertTrue(delayed_store.first_save_entered.wait(timeout=1))
+            result_thread.start()
+            self.assertTrue(result_thread_started.wait(timeout=1))
+            delayed_store.release_first_save.set()
+            draft_thread.join(timeout=1)
+            result_thread.join(timeout=1)
+            server._server.server_close()
+
+            self.assertFalse(draft_thread.is_alive())
+            self.assertFalse(result_thread.is_alive())
+            if errors:
+                raise AssertionError(errors)
+            saved = real_store.load_packet_progress()["learning:day:1"]["paging"]
+            self.assertEqual(saved["draft_answer"], "Paging maps pages.")
+            self.assertEqual(saved["result"], "partial")
+            self.assertEqual(saved["confidence"], "low")
+            self.assertEqual(saved["confidence_score"], 2)
+            self.assertEqual(saved["blocker_type"], "concept")
+
     def test_get_serves_existing_learning_html_packet(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             workspace = Path(tmp)
@@ -192,6 +281,27 @@ class PacketServerTest(unittest.TestCase):
             self.assertEqual(response.status, 200)
             self.assertEqual(body, b"\x89PNG\r\n\x1a\nimage")
             self.assertEqual(content_type, "image/png")
+
+    def test_get_assets_rejects_course_state_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            paths = build_course_paths(workspace, "operating-systems-midterm")
+            paths.ensure_directories()
+            paths.mastery_file.write_text("{}", encoding="utf-8")
+            CourseStore(paths).save_packet_progress({})
+
+            server, thread = self._start_server(workspace)
+
+            connection = HTTPConnection("127.0.0.1", server.port)
+            connection.request("GET", "/assets/courses/operating-systems-midterm/state/mastery.json")
+            response = connection.getresponse()
+            response.read()
+            connection.close()
+
+            server.shutdown()
+            thread.join(timeout=1)
+
+            self.assertEqual(response.status, 404)
 
     def test_get_assets_rejects_path_escape(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
